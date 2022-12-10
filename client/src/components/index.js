@@ -4,6 +4,8 @@ import New from './New'
 import Collection from './Collection'
 import Products from './Products'
 import Brand from './Brand'
+import Footer from './Footer'
+import ScrollToTop from './ScrollToTop'
 
 
 export {
@@ -12,5 +14,7 @@ export {
     New,
     Collection,
     Products,
-    Brand
+    Brand,
+    Footer,
+    ScrollToTop
 }

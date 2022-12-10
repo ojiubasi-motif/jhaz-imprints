@@ -1,5 +1,14 @@
 import "remixicon/fonts/remixicon.css";
-import { Header,Home, New,Collection,Products, Brand } from "./components";
+import {
+  Header,
+  Home,
+  New,
+  Collection,
+  Products,
+  Brand,
+  Footer,
+  ScrollToTop,
+} from "./components";
 
 function App() {
 
@@ -11,14 +20,18 @@ function App() {
         {/*home*/}
         <Home />
         {/* new items */}
-        <New/>
+        <New />
         {/* collections */}
-        <Collection/>
+        <Collection />
         {/* products */}
-        <Products/>
+        <Products />
         {/* brand */}
-        <Brand/>
+        <Brand />
+        {/* footer */}
+        <Footer />
       </main>
+      {/* scroll to top */}
+      <ScrollToTop/>
     </div>
   );
 }

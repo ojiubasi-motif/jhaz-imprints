@@ -23,7 +23,7 @@ const Home = () => {
           </a>
         </div>
 
-        <div className=" relative w-[310px] self-center">
+        <div className=" relative w-[310px] justify-self-center">
           <img src={h1} alt="home_img" className="w-[224px] absolute right-[-1.5rem] top-[-9.5rem]"/>
           <img src={h2} alt="home_img" className="w-[180px] ml-[.5rem] relative"/>
         </div>

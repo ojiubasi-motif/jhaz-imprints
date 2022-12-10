@@ -1,4 +1,4 @@
-import {new1,new2,new3,product1,product2,product3,product4} from "../assets/img";
+import {logo1, logo2, logo3, logo4, new1,new2,new3,product1,product2,product3,product4} from "../assets/img";
 
 export const navLinks = [
   {
@@ -7,17 +7,17 @@ export const navLinks = [
     logo: "ri-home-line",
   },
   {
-    id: "New",
+    id: "new",
     title: "New",
     logo: "ri-price-tag-3-line",
   },
   {
-    id: "Collection",
+    id: "collection",
     title: "Collection",
     logo: "ri-compasses-line",
   },
   {
-    id: "Products",
+    id: "products",
     title: "Products",
     logo: "ri-t-shirt-2-line",
   },
@@ -69,4 +69,77 @@ export const products =[
     price:"$69.99",
     img:product4
   }
+];
+
+export const brands =[
+  {
+    id:'lg1',
+    img:logo1
+  },
+  {
+    id:'lg2',
+    img:logo2
+  },
+  {
+    id:'lg3',
+    img:logo3
+  },
+  {
+    id:'lg4',
+    img:logo4
+  },
+
+]
+export const footerContent =[
+  {
+    divId:"Company",
+    items:[
+      {
+        id:"c1",
+        title:"Shop"
+      },
+      {
+        id:"c2",
+        title:"Category"
+      },
+      {
+        id:"c3",
+        title:"Contact info"
+      }
+    ]
+  },
+  {
+    divId:"Blog",
+    items:[
+      {
+        id:"b1",
+        title:"Events"
+      },
+      {
+        id:"b2",
+        title:"Popular news"
+      },
+      {
+        id:"b3",
+        title:"Recent news"
+      }
+    ]
+  },
+]
+export const footerSocial = [
+  {
+    id:"fb",
+    link:"https://web.facebook.com/oji.ubasi.3",
+    logo:"ri-facebook-fill"
+  },
+  {
+    id:"ig",
+    link:"https://www.instagram.com/ubasioji/",
+    logo:"ri-instagram-line"
+  },
+  {
+    id:"tw",
+    link:"https://twitter.com/CryptedO",
+    logo:"ri-twitter-line"
+  },
 ]

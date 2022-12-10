@@ -129,3 +129,51 @@ img {
 .mainGLobal {
   overflow: hidden; /* For animation ScrollReveal */
 }
+
+.swiper-wrapper{
+  margin-bottom: 3rem;
+}
+.active-linkk{
+  color: red;
+}
+
+/* ========scroll bar============== */
+::-webkit-scrollbar{
+  width: .6rem;
+  border-radius: .5rem;
+  background-color: hsl(220, 8%, 76%);
+}
+
+::-webkit-scrollbar-thumb{
+  background-color: hsl(220, 8%, 64%);
+  border-radius: .5rem;
+}
+
+::-webkit-scrollbar-thumb:hover{
+  background-color: hsl(220, 8%, 54%);
+}
+
+/* ==========scroll to top=========== */
+.scrollup{
+  position:fixed;
+    right:1rem;
+    /* bottom:7.5rem; */
+    /* bottom:${props=>props.scrolled? '5rem': '-20%'}; */
+    display:inline-flex;
+    box-shadow: 0 8px 12px hsla(220, 18%, 45%, .15);
+    background-color:var(--container-color);
+    border-radius:.4rem;
+    padding:  .35rem;
+    opacity:.8;
+    z-index:  var(--z-tooltip);
+    transition:.4s;
+
+}
+.scrollup:hover{
+  background-color:var(--first-color-alt);
+  transform: translateY(-.25rem);
+}
+.scrollup i{
+  color: var(--title-color);
+  font-size: 1.5rem;
+}

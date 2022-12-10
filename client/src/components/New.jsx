@@ -7,7 +7,7 @@ const New = () => {
       <h2 className="section__title">New Categories</h2>
       <div className=" !gap-y-[2.5rem] pb-[1.5rem] containerGlobal gridGlobal">
         {newCollections.map((collection) => (
-          <article key={collection.id} className=" self-center ">
+          <article key={collection.id} className=" justify-self-center">
             <img src={collection.img} alt="new img" className="w-[270px] mb-[1rem]" />
             <a href="#" className=" group flex items-center justify-between text-titleColor pr-[.75rem]">
               <div className="new_data">
