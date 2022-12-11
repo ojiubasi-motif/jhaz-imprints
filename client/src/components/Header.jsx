@@ -3,7 +3,7 @@ import logo from "../assets/img/logo6.png";
 import { navLinks } from "../constants";
 // import styles from "../style";
 
-const Header = () => {
+const Header = ({mode, setMode}) => {
   const [isScrolled, setIsScrolled] = useState(false);
 
   //make changes to styles on vertical scroll
@@ -34,7 +34,12 @@ const Header = () => {
           </ul>
         </div>
         {/* theme change button */}
-        <i className="ri-moon-fill"></i>
+        {
+          mode ==='light'?
+          <i className="ri-moon-fill text-titleColor text-[1.125rem]" onClick={()=>setMode('dark')}></i>
+          :<i className="ri-sun-line text-titleColor text-[1.125rem]" onClick={()=>setMode('light')}></i>
+        }
+        
       </nav>
     </header>
   );

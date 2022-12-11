@@ -9,13 +9,22 @@ import {
   Footer,
   ScrollToTop,
 } from "./components";
+import {useState} from 'react'
 
 function App() {
+  const modes = ['light', 'dark']
+const [mode, setMode] = useState(modes[0])
+
+// const handleState = (e) => {
+//   setMode(e);
+// };
 
   return (
-    <div className="">
+    <div className={[
+      mode && `theme-${mode}`,
+    ].filter(Boolean).join(' ')}>
       {/* navbar */}
-      <Header />
+      <Header mode={mode} setMode = {setMode}/>
       <main className="mainGLobal">
         {/*home*/}
         <Home />
