@@ -17,7 +17,7 @@ const Footer = () => {
           </p>
         </div>
 
-        <div className=" grid grid-cols-[repeat(2,max-content)] gap-x-[3.5rem] gap-y-[3rem]">
+        <div className="fo0oter__content xs:grid-cols-[max-content] xs:gap-y-[2rem] grid grid-cols-[repeat(2,max-content)] gap-x-[3.5rem] gap-y-[3rem]">
           {footerContent.map((content) => (
             <div key={content.divId}>
               <h3 className=" text-h3FontSize mb-[1.25rem]">{content.divId}</h3>

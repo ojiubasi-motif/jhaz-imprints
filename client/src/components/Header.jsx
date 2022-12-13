@@ -19,7 +19,7 @@ const Header = ({mode, setMode}) => {
           <img src={logo} alt="logo" className=" w-[124px] h-[72px]" />
         </a>
 
-        <div className="fixed bottom-[1.5rem] bg-bodyColor shadow-[0 4px 12px hsla(220,18%,40%,.15)] w-[90%] left-0 right-0 my-0 mx-auto py-[1.25rem] px-[2.8rem] rounded-[.5rem]" id="nav-menu">
+        <div className="fixed bottom-[1.5rem] bg-bodyColor shadow-[0 4px 12px hsla(220,18%,40%,.15)] w-[90%] left-0 right-0 my-0 mx-auto py-[1.25rem] px-[2.8rem] rounded-[.5rem] duration-[.4s] xs:px-[1.5rem] xs:py-[1rem] nav__menu" id="nav-menu">
           <ul className="flex justify-between items-center">
             {navLinks.map((nav, index) => (
               <li key={nav.id} className="">

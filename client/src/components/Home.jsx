@@ -4,8 +4,8 @@ import h2 from "../assets/img/home2.png";
 
 const Home = () => {
   return (
-    <section className=" bg-bgColor overflow-hidden sectionGlobal" id="home">
-      <div className="containerGlobal gridGlobal pt-[4rem] px-0 pb-[1rem] !gap-y-[8.5rem]">
+    <section className=" bg-bgColor overflow-hidden duration-[.4s] sectionGlobal" id="home">
+      <div className="containerGlobal gridGlobal pt-[4rem] px-0 pb-[1rem] xs:pt-[2rem] xs:pb-[1rem] xs:px-0 xs:!gap-y-[6rem] !gap-y-[8.5rem]">
         <div
           className="home
             __data"
@@ -14,7 +14,7 @@ const Home = () => {
             New Clothing <br />
             Collection
           </h1>
-          <p className=" text-titleColor mt-[1rem] mx-0 mb-[2rem] leading-[140%]">
+          <p className="home__desc text-titleColor xs:text-smallFontSize mt-[1rem] mx-0 mb-[2rem] leading-[140%]">
             The new collection of clothing from <br />
             the best brands this year.
           </p>
@@ -23,9 +23,9 @@ const Home = () => {
           </a>
         </div>
 
-        <div className=" relative w-[310px] justify-self-center">
-          <img src={h1} alt="home_img" className="w-[224px] absolute right-[-1.5rem] top-[-9.5rem]"/>
-          <img src={h2} alt="home_img" className="w-[180px] ml-[.5rem] relative"/>
+        <div className="home__imgs xs:w-[248px] relative w-[310px] justify-self-center">
+          <img src={h1} alt="home_img" className="w-[224px] absolute right-[-1.5rem] top-[-9.5rem] xs:w-[180px] xs:top-[-7rem]"/>
+          <img src={h2} alt="home_img" className="w-[180px] ml-[.5rem] relative xs:w-[150px]"/>
         </div>
       </div>
     </section>

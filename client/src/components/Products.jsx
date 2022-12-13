@@ -42,7 +42,7 @@ const Products = () => {
         className="products_container containerGlobal mySwiper"
       >
         {products.map((product) => (
-          <SwiperSlide key={product.id} className="w-[270px]">
+          <SwiperSlide key={product.id} className="w-[270px] xs:w-[230px]">
             <img src={product.img} alt="product img" className=" mb-[1rem]" />
             <h2 className=" text-h3FontSize mb-[.75rem]">{product.title}</h2>
             <span className=" text-titleColor font-fontMedium">

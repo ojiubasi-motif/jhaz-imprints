@@ -40,7 +40,8 @@ module.exports = {
       }
     },
     screens:{
-      
+      'xs': {'max': '340px'},
+      // => @media (max-width: 340px) { ... }
     }
   },
   plugins: [],

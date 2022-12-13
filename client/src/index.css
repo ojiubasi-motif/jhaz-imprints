@@ -143,6 +143,14 @@ img {
   color: red;
 }
 
+@media screen and (max-width: 340px) {
+  .containerGlobal{
+    margin-left: 1rem;
+    margin-right: 1rem;
+  }
+  
+}
+
 /* ========scroll bar============== */
 ::-webkit-scrollbar{
   width: .6rem;
@@ -173,7 +181,6 @@ img {
     opacity:.8;
     z-index:  var(--z-tooltip);
     transition:.4s;
-
 }
 .scrollup:hover{
   background-color:var(--first-color-alt);
