@@ -1,0 +1,24 @@
+{
+    "name": "@jhaz-imprints/catalog-db",
+    "version": "0.0.1",
+    "private": true,
+    "description": "MongoDB product catalog models and connection for Jhaz-imprints",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts",
+        "./models": "./src/models/index.ts",
+        "./connection": "./src/connection.ts"
+    },
+    "scripts": {
+        "type-check": "tsc --noEmit"
+    },
+    "dependencies": {
+        "mongoose": "^8.1.0",
+        "mongoose-paginate-v2": "^1.7.31"
+    },
+    "devDependencies": {
+        "@types/mongoose-paginate-v2": "^1.6.5",
+        "@types/node": "^20.11.0",
+        "typescript": "^5.3.3"
+    }
+}

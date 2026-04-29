@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "strict": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Path mapping */
+    "baseUrl": ".",
+    "paths": {
+      "@jhaz-imprints/db": ["packages/db/src/client.ts"],
+      "@jhaz-imprints/catalog-db": ["packages/catalog-db/src/index.ts"],
+      "@jhaz-imprints/catalog-db/*": ["packages/catalog-db/src/*"],
+      "@jhaz-imprints/api": ["packages/api/src/app.ts"],
+      "@jhaz-imprints/shared": ["packages/shared/src/index.ts"],
+      "@jhaz-imprints/shared/*": ["packages/shared/src/*"]
+    }
+  },
+  "include": ["packages", "apps"],
+  "references": [
+    { "path": "./packages/db" },
+    { "path": "./packages/catalog-db" },
+    { "path": "./packages/api" },
+    { "path": "./packages/shared" },
+    { "path": "./apps/web" },
+    { "path": "./apps/admin" }
+  ]
+}

@@ -1,0 +1,133 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum Role {
+  CUSTOMER
+  ADMIN
+  TAILOR
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  IN_PRODUCTION
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// Models
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  phone     String?
+  firstName String?
+  lastName  String?
+  role      Role     @default(CUSTOMER)
+  
+  measurements    Measurement[]
+  orders          Order[]
+  
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Measurement {
+  id          String  @id @default(cuid())
+  userId      String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Profile data
+  profileName String  @default("Default")
+  isDefault   Boolean @default(false)
+  
+  // Measurements in cm
+  chest       Float?
+  waist       Float?
+  hip         Float?
+  shoulder    Float?
+  armLength   Float?
+  length      Float?
+  
+  // Additional notes
+  notes       String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // One measurement can be referenced by many orders (snapshot at order time)
+  orders      Order[]
+}
+
+model Order {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Snapshot of measurement at order time (not a live link)
+  measurementId       String
+  measurement         Measurement @relation(fields: [measurementId], references: [id])
+  
+  // Order metadata
+  status              OrderStatus @default(PENDING)
+  totalAmount         Float
+  currency            String      @default("NGN")
+  
+  // Optional order notes (garment details, special requests)
+  notes               String?
+  
+  // Timestamps
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  // Relations
+  payment             Payment?
+  statusHistory       OrderStatusHistory[]
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  orderId     String   @unique  // Unique constraint for idempotency
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  // Payment details
+  amount      Float
+  currency    String      @default("NGN")
+  status      PaymentStatus @default(PENDING)
+  
+  // Reference for idempotency and reconciliation
+  reference   String   @unique // e.g., payment provider's transaction ID
+  provider    String   @default("STRIPE") // STRIPE, PAYSTACK, etc.
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model OrderStatusHistory {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  // Status transition
+  status      OrderStatus
+  note        String?  // e.g., tailor's production notes
+  
+  createdAt   DateTime @default(now())
+}

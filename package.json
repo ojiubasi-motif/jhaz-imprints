@@ -1,0 +1,29 @@
+{
+    "name": "jhaz-imprints",
+    "version": "0.0.1",
+    "private": true,
+    "description": "Jhaz-imprints E-Commerce Platform — Nigerian traditional dress tailor",
+    "packageManager": "pnpm@9.0.0",
+    "engines": {
+        "node": ">=18.17.0",
+        "pnpm": ">=9.0.0"
+    },
+    "scripts": {
+        "dev": "turbo run dev --parallel",
+        "build": "turbo run build",
+        "test": "pnpm --filter @jhaz-imprints/api test",
+        "lint": "turbo run lint",
+        "type-check": "turbo run type-check",
+        "db:migrate": "turbo run db:migrate",
+        "db:studio": "cd packages/db && pnpm prisma studio"
+    },
+    "devDependencies": {
+        "turbo": "^2.9.6"
+    },
+    "pnpm": {
+        "workspaces": [
+            "apps/*",
+            "packages/*"
+        ]
+    }
+}
