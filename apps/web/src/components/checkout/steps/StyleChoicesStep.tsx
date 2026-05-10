@@ -5,37 +5,22 @@
 "use client";
 
 import { useFormContext } from "react-hook-form";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Image from "next/image";
 import type { OrderCreate } from "@jhaz-imprints/shared";
-import type { IStyleOption } from "@jhaz-imprints/catalog-db";
+import { useAppSelector } from "@/store/hooks";
 
-interface StyleChoicesStepProps {
-  productId: string;
-}
-
-async function fetchProductStyles(productId: string): Promise<IStyleOption[]> {
-  const res = await fetch(`/api/v1/products/${productId}`);
-  if (!res.ok) throw new Error("Failed to fetch product");
-  const product = await res.json();
-  return product.styleOptions || [];
-}
-
-export default function StyleChoicesStep({ productId }: StyleChoicesStepProps) {
+export default function StyleChoicesStep() {
   const { watch, setValue } = useFormContext<OrderCreate>();
-  const [selected, setSelected] = useState<string | null>(null);
-
-  const { data: styleOptions = [], isLoading } = useQuery({
-    queryKey: ["product", productId, "styles"],
-    queryFn: () => fetchProductStyles(productId),
-  });
+  const currentStyle = watch("styleOptionName");
+  
+  const { currentProduct, isLoading } = useAppSelector((state) => state.products);
 
   const handleSelect = (styleName: string) => {
-    setSelected(styleName);
-    // Store in form context if needed
+    setValue("styleOptionName", styleName, { shouldValidate: true });
   };
 
-  if (isLoading) {
+  if (isLoading || !currentProduct) {
     return (
       <div className="space-y-4">
         <h3 className="text-lg font-semibold">Choose Your Style</h3>
@@ -48,6 +33,8 @@ export default function StyleChoicesStep({ productId }: StyleChoicesStepProps) {
     );
   }
 
+  const styleOptions = currentProduct.styleOptions || [];
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Choose Your Style</h3>
@@ -56,19 +43,23 @@ export default function StyleChoicesStep({ productId }: StyleChoicesStepProps) {
         {styleOptions.map((style) => (
           <button
             key={style.name}
+            type="button"
             onClick={() => handleSelect(style.name)}
             className={`card text-left transition-all ${
-              selected === style.name
+              currentStyle === style.name
                 ? "ring-2 ring-primary border-primary"
                 : "hover:shadow-md"
             }`}
           >
             {/* Preview Image */}
-            <img
-              src={style.previewImageUrl}
-              alt={style.name}
-              className="w-full h-40 object-cover rounded mb-3"
-            />
+            <div className="relative w-full h-40 overflow-hidden rounded mb-3">
+              <Image
+                src={style.previewImageUrl}
+                alt={style.name}
+                fill
+                className="object-cover"
+              />
+            </div>
 
             {/* Style Info */}
             <h4 className="font-semibold">{style.name}</h4>

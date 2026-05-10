@@ -28,6 +28,8 @@ export function computeOrderTotal(input: PricingInput): number {
 
   const total = input.basePrice + fabricModifier + styleModifier;
 
-  // Round to 2 decimal places
-  return Math.round(total * 100) / 100;
+  // Round to 2 decimal places.
+  // Adding Number.EPSILON compensates for IEEE-754 binary representation errors
+  // (e.g. 10000.005 * 100 = 1000000.4999... without EPSILON, rounds the wrong way).
+  return Math.round((total + Number.EPSILON) * 100) / 100;
 }

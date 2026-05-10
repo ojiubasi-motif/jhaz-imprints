@@ -5,9 +5,10 @@
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { ImageUploader, type UploadedImage } from "../components/ImageUploader";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { createAdminProduct, clearSaveError } from "@/store/slices/productsSlice";
 
 const ProductSchema = z.object({
   name: z.string().min(1, "Product name is required"),
@@ -24,25 +25,13 @@ const ProductSchema = z.object({
 
 type ProductFormData = z.infer<typeof ProductSchema>;
 
-async function saveProduct(data: ProductFormData & { images: UploadedImage[] }, token: string) {
-  const res = await fetch("/api/v1/admin/products", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error("Failed to save product");
-  return res.json();
-}
-
 export function ProductEditor() {
-  const token = localStorage.getItem("auth_token") || "";
+  const dispatch = useAppDispatch();
+  const { isSaving, saveError } = useAppSelector((state) => state.products);
   const [productImages, setProductImages] = useState<UploadedImage[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const { register, control, handleSubmit, formState: { errors } } = useForm<ProductFormData>({
+  const { register, control, handleSubmit, reset, formState: { errors } } = useForm<ProductFormData>({
     resolver: zodResolver(ProductSchema),
     defaultValues: {
       name: "",
@@ -68,57 +57,57 @@ export function ProductEditor() {
     name: "styleOptions" as any,
   });
 
-  const saveMutation = useMutation({
-    mutationFn: (data: ProductFormData) =>
-      saveProduct(
-        { ...data, images: productImages },
-        token
-      ),
-    onSuccess: () => {
-      setError(null);
-      alert("Product saved successfully!");
-    },
-    onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to save product");
-    },
-  });
+  const onSubmit = async (data: ProductFormData) => {
+    setLocalError(null);
+    dispatch(clearSaveError());
 
-  const onSubmit = (data: ProductFormData) => {
     if (productImages.length === 0) {
-      setError("Please upload at least one product image");
+      setLocalError("Please upload at least one product image");
       return;
     }
-    saveMutation.mutate(data);
+    
+    const resultAction = await dispatch(createAdminProduct({
+      ...data,
+      images: productImages
+    }));
+
+    if (createAdminProduct.fulfilled.match(resultAction)) {
+      alert("Product saved successfully!");
+      reset();
+      setProductImages([]);
+    }
   };
+
+  const displayError = localError || saveError;
 
   return (
     <div className="max-w-4xl mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8">Product Editor</h1>
+      <h1 className="text-3xl font-bold mb-8 text-gray-900">Product Editor</h1>
 
-      {error && (
-        <div role="alert" className="rounded-lg bg-red-50 p-4 mb-6 text-red-700">
-          {error}
+      {displayError && (
+        <div role="alert" className="rounded-lg bg-red-50 p-4 mb-6 border border-red-200 text-red-700">
+          {displayError}
         </div>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* Basic Info */}
-        <div className="card space-y-4">
-          <h2 className="text-xl font-semibold">Basic Information</h2>
+        <div className="bg-white shadow rounded-lg p-6 border border-gray-100 space-y-4">
+          <h2 className="text-xl font-semibold text-gray-900 border-b pb-2">Basic Information</h2>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Product Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
             <input
               {...register("name")}
-              className="input w-full"
+              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border"
               placeholder="e.g., Traditional Wedding Aso-oke"
             />
-            {errors.name && <p className="text-error text-sm mt-1">{errors.name.message}</p>}
+            {errors.name && <p className="text-red-600 text-sm mt-1">{errors.name.message}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Category</label>
-            <select {...register("category")} className="input w-full">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <select {...register("category")} className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border bg-white">
               <option value="wedding-aso-oke">Wedding Aso-oke</option>
               <option value="agbada">Agbada</option>
               <option value="kente-gown">Kente Gown</option>
@@ -128,30 +117,30 @@ export function ProductEditor() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Base Price (₦)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (₦)</label>
             <input
               {...register("basePrice", { valueAsNumber: true })}
               type="number"
-              className="input w-full"
+              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border"
               placeholder="45000"
             />
-            {errors.basePrice && <p className="text-error text-sm mt-1">{errors.basePrice.message}</p>}
+            {errors.basePrice && <p className="text-red-600 text-sm mt-1">{errors.basePrice.message}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea
               {...register("description")}
-              className="input w-full"
+              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border"
               rows={4}
               placeholder="Detailed product description..."
             />
-            {errors.description && <p className="text-error text-sm mt-1">{errors.description.message}</p>}
+            {errors.description && <p className="text-red-600 text-sm mt-1">{errors.description.message}</p>}
           </div>
         </div>
 
         {/* Images */}
-        <div className="card">
+        <div className="bg-white shadow rounded-lg p-6 border border-gray-100">
           <ImageUploader
             label="Product Gallery Images"
             existingImages={productImages}
@@ -162,23 +151,23 @@ export function ProductEditor() {
         </div>
 
         {/* SEO */}
-        <div className="card space-y-4">
-          <h2 className="text-xl font-semibold">SEO Metadata</h2>
+        <div className="bg-white shadow rounded-lg p-6 border border-gray-100 space-y-4">
+          <h2 className="text-xl font-semibold text-gray-900 border-b pb-2">SEO Metadata</h2>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Title</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
             <input
               {...register("seoMeta.title")}
-              className="input w-full"
+              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border"
               placeholder="SEO title"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea
               {...register("seoMeta.description")}
-              className="input w-full"
+              className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border"
               rows={2}
               placeholder="Meta description for search results"
             />
@@ -186,13 +175,13 @@ export function ProductEditor() {
         </div>
 
         {/* Fabric Options */}
-        <div className="card">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Fabric Options</h2>
+        <div className="bg-white shadow rounded-lg p-6 border border-gray-100">
+          <div className="flex justify-between items-center mb-4 border-b pb-2">
+            <h2 className="text-xl font-semibold text-gray-900">Fabric Options</h2>
             <button
               type="button"
               onClick={() => addFabric({ name: "", priceModifier: 0, swatchImageUrl: "", inStock: true })}
-              className="btn-secondary px-4 py-2"
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-gray-600 hover:bg-gray-700 focus:outline-none"
             >
               + Add Fabric
             </button>
@@ -200,17 +189,17 @@ export function ProductEditor() {
 
           <div className="space-y-4">
             {fabricFields.map((field, idx) => (
-              <div key={field.id} className="border rounded p-4">
+              <div key={field.id} className="border border-gray-200 rounded p-4 bg-gray-50">
                 <input
                   type="text"
                   placeholder="Fabric name"
-                  className="input w-full mb-2"
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border mb-2"
                   defaultValue={field.name}
                 />
                 <input
                   type="number"
                   placeholder="Price modifier"
-                  className="input w-full"
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-4 py-2 border"
                   defaultValue={field.priceModifier}
                 />
               </div>
@@ -221,10 +210,10 @@ export function ProductEditor() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={saveMutation.isPending}
-          className="btn-primary w-full py-3 font-semibold"
+          disabled={isSaving}
+          className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
         >
-          {saveMutation.isPending ? "Saving..." : "Save Product"}
+          {isSaving ? "Saving..." : "Save Product"}
         </button>
       </form>
     </div>

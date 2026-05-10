@@ -8,22 +8,42 @@ interface Order {
   productName: string;
   deliveryDate: Date;
   measurement?: {
-    bust?: number;
+    chest?: number;
     waist?: number;
     hip?: number;
     shoulder?: number;
-    sleeveLen?: number;
-    height?: number;
+    armLength?: number;
+    length?: number;
   };
   totalPrice: number;
   fabricOption?: string;
   colorOption?: string;
   styleOption?: string;
+  customerName?: string;
+  customerEmail?: string;
 }
 
 interface EmailTemplate {
   subject: string;
   html: string;
+}
+
+/** Safe price formatter — never throws on undefined/null */
+function formatPrice(price?: number | null): string {
+  return (price ?? 0).toLocaleString("en-NG");
+}
+
+/** Safe date formatter — never throws on invalid/missing date */
+function formatDate(date?: Date | null, options?: Intl.DateTimeFormatOptions): string {
+  const defaults: Intl.DateTimeFormatOptions = {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  };
+  try {
+    const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+    return d.toLocaleDateString("en-NG", options || defaults);
+  } catch {
+    return new Date().toLocaleDateString("en-NG", options || defaults);
+  }
 }
 
 /**
@@ -32,22 +52,18 @@ interface EmailTemplate {
  * Tested for dark-mode rendering in Gmail, Apple Mail, Outlook.
  */
 export function orderConfirmedEmail(order: Order): EmailTemplate {
-  const formattedDate = order.deliveryDate.toLocaleDateString("en-NG", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const formattedDate = formatDate(order.deliveryDate);
 
-  const measurementHtml = order.measurement
+  const m = order.measurement;
+  const measurementHtml = m
     ? `
     <tr>
       <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #6b7280; font-size: 14px;">
         <strong>Measurements:</strong>
       </td>
       <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; color: #1f2937; font-size: 14px; text-align: right;">
-        Bust: ${order.measurement.bust}cm | Waist: ${order.measurement.waist}cm | Hip: ${order.measurement.hip}cm<br/>
-        Shoulder: ${order.measurement.shoulder}cm | Sleeve: ${order.measurement.sleeveLen}cm | Height: ${order.measurement.height}cm
+        Chest: ${m.chest ?? "—"}cm | Waist: ${m.waist ?? "—"}cm | Hip: ${m.hip ?? "—"}cm<br/>
+        Shoulder: ${m.shoulder ?? "—"}cm | Arm Length: ${m.armLength ?? "—"}cm | Length: ${m.length ?? "—"}cm
       </td>
     </tr>
     `
@@ -150,7 +166,7 @@ export function orderConfirmedEmail(order: Order): EmailTemplate {
                             <strong>Total Amount:</strong>
                           </td>
                           <td style="padding: 12px 0; color: #1f2937; font-size: 18px; font-weight: 700; text-align: right;">
-                            ₦${order.totalPrice.toLocaleString("en-NG")}
+                            ₦${formatPrice(order.totalPrice)}
                           </td>
                         </tr>
                       </table>
@@ -162,7 +178,7 @@ export function orderConfirmedEmail(order: Order): EmailTemplate {
                     </h2>
                     <ol style="margin: 0; padding-left: 20px; color: #6b7280; font-size: 14px;">
                       <li style="margin-bottom: 10px;">We'll measure and prepare your outfit with precision</li>
-                      <li style="margin-bottom: 10px;">You'll receive updates via WhatsApp at each stage</li>
+                      <li style="margin-bottom: 10px;">You'll receive email updates at each stage</li>
                       <li style="margin-bottom: 10px;">Upon completion, we'll arrange delivery to your location</li>
                     </ol>
 
@@ -170,7 +186,7 @@ export function orderConfirmedEmail(order: Order): EmailTemplate {
                     <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 4px;">
                       <p style="margin: 0; color: #1e40af; font-size: 14px;">
                         <strong>Have questions?</strong><br/>
-                        Chat with us on WhatsApp for real-time updates and support.
+                        Reach out to us via email for real-time updates and support.
                       </p>
                     </div>
 
@@ -242,8 +258,129 @@ export function statusUpdateEmail(
                       ${newStatus}
                     </div>
                     <p style="margin: 20px 0 0 0; color: #6b7280; font-size: 14px;">
-                      We'll keep you updated every step of the way. Check your WhatsApp for instant notifications!
+                      We'll keep you updated every step of the way via email and SMS.
                     </p>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `,
+  };
+}
+
+/**
+ * Admin / Tailor order alert email.
+ * Sent to the admin/tailor when a new order is confirmed.
+ * Includes full customer details, measurements, and specifications.
+ */
+export function adminOrderAlertEmail(order: Order): EmailTemplate {
+  const formattedDate = formatDate(order.deliveryDate);
+  const m = order.measurement;
+
+  const measurementRows = m
+    ? `
+    <tr><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #6b7280;">Chest</td><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #1f2937; text-align: right;">${m.chest ?? "—"} cm</td></tr>
+    <tr><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #6b7280;">Waist</td><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #1f2937; text-align: right;">${m.waist ?? "—"} cm</td></tr>
+    <tr><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #6b7280;">Hip</td><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #1f2937; text-align: right;">${m.hip ?? "—"} cm</td></tr>
+    <tr><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #6b7280;">Shoulder</td><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #1f2937; text-align: right;">${m.shoulder ?? "—"} cm</td></tr>
+    <tr><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #6b7280;">Arm Length</td><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #1f2937; text-align: right;">${m.armLength ?? "—"} cm</td></tr>
+    <tr><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #6b7280;">Length</td><td style="padding: 6px 12px; border: 1px solid #e5e7eb; color: #1f2937; text-align: right;">${m.length ?? "—"} cm</td></tr>
+    `
+    : `<tr><td colspan="2" style="padding: 12px; border: 1px solid #e5e7eb; color: #9ca3af; text-align: center;">No measurements provided</td></tr>`;
+
+  return {
+    subject: `🔔 New Order: ${order.productName} — ${order.customerName || "Customer"}`,
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>New Order Alert</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #1f2937; background-color: #f9fafb; margin: 0; padding: 0;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb;">
+          <tr>
+            <td style="padding: 20px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <!-- Header -->
+                <tr style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                  <td style="padding: 30px 20px; text-align: center; color: #ffffff;">
+                    <h1 style="margin: 0; font-size: 24px; font-weight: 700;">
+                      🔔 New Order Received
+                    </h1>
+                    <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.95;">
+                      Action required — review measurements and begin production
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- Body -->
+                <tr>
+                  <td style="padding: 25px 20px;">
+                    <!-- Customer & Order Info -->
+                    <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #1f2937;">Order Details</h2>
+                    <div style="background-color: #f3f4f6; border-left: 4px solid #f59e0b; padding: 15px; margin: 0 0 20px 0; border-radius: 4px;">
+                      <table width="100%" cellpadding="0" cellspacing="0">
+                        <tr>
+                          <td style="padding: 6px 0; color: #6b7280; font-size: 14px;"><strong>Order ID:</strong></td>
+                          <td style="padding: 6px 0; color: #1f2937; font-size: 14px; text-align: right;"><code style="background: #fff; padding: 2px 6px; border-radius: 3px;">${order.id}</code></td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; color: #6b7280; font-size: 14px;"><strong>Customer:</strong></td>
+                          <td style="padding: 6px 0; color: #1f2937; font-size: 14px; text-align: right;">${order.customerName || "—"}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; color: #6b7280; font-size: 14px;"><strong>Email:</strong></td>
+                          <td style="padding: 6px 0; color: #1f2937; font-size: 14px; text-align: right;">${order.customerEmail || "—"}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; color: #6b7280; font-size: 14px;"><strong>Outfit:</strong></td>
+                          <td style="padding: 6px 0; color: #1f2937; font-size: 14px; text-align: right;">${order.productName}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; color: #6b7280; font-size: 14px;"><strong>Style:</strong></td>
+                          <td style="padding: 6px 0; color: #1f2937; font-size: 14px; text-align: right;">${order.styleOption || "Classic"}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; color: #6b7280; font-size: 14px;"><strong>Fabric:</strong></td>
+                          <td style="padding: 6px 0; color: #1f2937; font-size: 14px; text-align: right;">${order.fabricOption || "Standard"}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; color: #6b7280; font-size: 14px;"><strong>Delivery Target:</strong></td>
+                          <td style="padding: 6px 0; color: #1f2937; font-size: 14px; text-align: right;">${formattedDate}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; color: #6b7280; font-size: 14px;"><strong>Total:</strong></td>
+                          <td style="padding: 8px 0; color: #1f2937; font-size: 18px; font-weight: 700; text-align: right;">₦${formatPrice(order.totalPrice)}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <!-- Measurements -->
+                    <h2 style="margin: 0 0 12px 0; font-size: 16px; color: #1f2937;">📐 Customer Measurements</h2>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 20px 0;">
+                      ${measurementRows}
+                    </table>
+
+                    <!-- Action -->
+                    <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                      <p style="margin: 0; color: #92400e; font-size: 14px;">
+                        <strong>Next Step:</strong> Review the measurements above and confirm production readiness.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr style="background-color: #f9fafb; border-top: 1px solid #e5e7eb;">
+                  <td style="padding: 15px 20px; text-align: center; color: #9ca3af; font-size: 12px;">
+                    <p style="margin: 0;">Jhaz-imprints Admin Notification</p>
                   </td>
                 </tr>
               </table>

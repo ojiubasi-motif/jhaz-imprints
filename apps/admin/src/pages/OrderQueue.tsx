@@ -1,142 +1,109 @@
 /**
- * Order Queue — tailor view for managing order production.
+ * Order Queue — view for managing orders.
  */
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { OrderStatusBadge } from "../components/OrderStatusBadge";
-
-interface Order {
-  id: string;
-  userId: string;
-  measurement: {
-    chest?: number;
-    waist?: number;
-    hip?: number;
-  };
-  user: { firstName?: string; lastName?: string };
-  status: "PENDING" | "CONFIRMED" | "IN_PRODUCTION" | "SHIPPED" | "DELIVERED" | "CANCELLED";
-  totalAmount: number;
-  createdAt: string;
-}
-
-async function fetchOrders(token: string): Promise<Order[]> {
-  const res = await fetch("/api/v1/admin/orders?status=CONFIRMED,IN_PRODUCTION", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error("Failed to fetch orders");
-  return res.json();
-}
-
-async function updateOrderStatus(
-  orderId: string,
-  status: string,
-  token: string
-): Promise<void> {
-  const res = await fetch(`/api/v1/admin/orders/${orderId}/status`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ status }),
-  });
-  if (!res.ok) throw new Error("Failed to update status");
-}
+import { useEffect, useState } from 'react';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { fetchAllOrders, updateOrderStatus, setStatusFilter } from '@/store/slices/ordersSlice';
+import { format } from 'date-fns';
 
 export function OrderQueue() {
-  const token = localStorage.getItem("auth_token") || "";
-  const queryClient = useQueryClient();
-  const [sortBy] = useState<"date" | "status">("date");
+  const dispatch = useAppDispatch();
+  const { items, isLoading, error, statusFilter } = useAppSelector((state) => state.orders);
 
-  const { data: orders = [], isLoading } = useQuery({
-    queryKey: ["orders", "queue"],
-    queryFn: () => fetchOrders(token),
-    refetchInterval: 30000, // Poll every 30 seconds
-  });
+  useEffect(() => {
+    dispatch(fetchAllOrders());
+  }, [dispatch]);
 
-  const statusMutation = useMutation({
-    mutationFn: ({ orderId, status }: { orderId: string; status: string }) =>
-      updateOrderStatus(orderId, status, token),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders", "queue"] });
-    },
-  });
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    await dispatch(updateOrderStatus({ id, status: newStatus }));
+  };
 
-  // Sort orders by creation date (most urgent first)
-  const sortedOrders = [...orders].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-
-  if (isLoading) {
-    return <div className="text-center py-8">Loading orders...</div>;
-  }
+  const filteredItems = statusFilter === 'ALL' 
+    ? items 
+    : items.filter(order => order.status === statusFilter);
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-3xl font-bold">Order Queue</h1>
+    <div className="py-6 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Order Queue</h1>
+        <div className="flex gap-2">
+          {['ALL', 'PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED'].map(status => (
+            <button
+              key={status}
+              onClick={() => dispatch(setStatusFilter(status))}
+              className={`px-4 py-2 rounded-md text-sm font-medium ${
+                statusFilter === status 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {status}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      {sortedOrders.length === 0 ? (
-        <div className="card text-center py-12 text-muted">
-          <p>No orders to process right now.</p>
+      {error && (
+        <div className="bg-red-50 p-4 rounded-md mb-6 border border-red-200 text-red-700">
+          {error}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-32 bg-white rounded-lg shadow animate-pulse border border-gray-100" />
+          ))}
         </div>
       ) : (
-        <div className="space-y-4">
-          {sortedOrders.map((order) => (
-            <div key={order.id} className="card">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                {/* Order Info */}
-                <div>
-                  <p className="text-xs text-muted uppercase">Customer</p>
-                  <p className="text-lg font-semibold">
-                    {order.user.firstName} {order.user.lastName}
-                  </p>
-                  <p className="text-sm text-muted mt-2">Order: #{order.id.slice(0, 8)}</p>
-                </div>
-
-                {/* Measurements */}
-                <div>
-                  <p className="text-xs text-muted uppercase">Measurements</p>
-                  <div className="space-y-1 text-sm">
-                    {order.measurement.chest && (
-                      <p>Chest: <strong>{order.measurement.chest} cm</strong></p>
-                    )}
-                    {order.measurement.waist && (
-                      <p>Waist: <strong>{order.measurement.waist} cm</strong></p>
-                    )}
-                    {order.measurement.hip && (
-                      <p>Hip: <strong>{order.measurement.hip} cm</strong></p>
-                    )}
+        <div className="bg-white shadow overflow-hidden sm:rounded-md border border-gray-200">
+          <ul className="divide-y divide-gray-200">
+            {filteredItems.map((order) => (
+              <li key={order.id} className="p-6 hover:bg-gray-50 transition-colors">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <p className="text-sm font-medium text-blue-600 truncate">
+                      Order #{order.id}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {order.createdAt ? format(new Date(order.createdAt), "MMM d, yyyy HH:mm") : 'Unknown date'}
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <p className="text-lg font-bold text-gray-900 mb-2">
+                      ₦{order.totalAmount?.toLocaleString() || '0'}
+                    </p>
+                    <select
+                      value={order.status}
+                      onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                      className={`text-sm rounded-full px-3 py-1 font-medium border-0 ring-1 ring-inset focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6
+                        ${order.status === 'COMPLETED' ? 'bg-green-50 text-green-700 ring-green-600/20' : 
+                          order.status === 'PENDING' ? 'bg-yellow-50 text-yellow-800 ring-yellow-600/20' : 
+                          'bg-blue-50 text-blue-700 ring-blue-700/10'}`}
+                    >
+                      <option value="PENDING">Pending</option>
+                      <option value="PROCESSING">Processing</option>
+                      <option value="COMPLETED">Completed</option>
+                      <option value="CANCELLED">Cancelled</option>
+                    </select>
                   </div>
                 </div>
-
-                {/* Status & Actions */}
-                <div className="flex flex-col justify-between">
-                  <div>
-                    <p className="text-xs text-muted uppercase mb-2">Status</p>
-                    <OrderStatusBadge status={order.status} />
-                  </div>
-
-                  {/* Status Update Dropdown */}
-                  <select
-                    value={order.status}
-                    onChange={(e) =>
-                      statusMutation.mutate({
-                        orderId: order.id,
-                        status: e.target.value,
-                      })
-                    }
-                    disabled={statusMutation.isPending}
-                    className="input mt-2 text-sm"
-                  >
-                    <option value="IN_PRODUCTION">In Production</option>
-                    <option value="SHIPPED">Shipped</option>
-                    <option value="DELIVERED">Delivered</option>
-                  </select>
+                
+                {/* Additional details could go here */}
+                <div className="mt-4 flex gap-4 text-sm text-gray-500 bg-gray-50 p-3 rounded">
+                  <div><span className="font-semibold text-gray-700">Style:</span> {order.styleOptionName || 'N/A'}</div>
+                  <div><span className="font-semibold text-gray-700">Fabric:</span> {order.fabricOptionName || 'N/A'}</div>
                 </div>
-              </div>
-            </div>
-          ))}
+              </li>
+            ))}
+            
+            {filteredItems.length === 0 && (
+              <li className="p-8 text-center text-gray-500">
+                No orders found matching this filter.
+              </li>
+            )}
+          </ul>
         </div>
       )}
     </div>

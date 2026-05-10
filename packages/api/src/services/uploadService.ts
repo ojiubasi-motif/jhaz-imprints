@@ -24,6 +24,13 @@ export interface UploadResult {
  * Automatically converts to WebP for web optimization.
  */
 export async function uploadToCloudinary(file: Express.Multer.File): Promise<UploadResult> {
+  // Configure at upload time to ensure env vars are loaded
+  c.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+
   return new Promise((resolve, reject) => {
     const stream = c.uploader.upload_stream(
       {
@@ -60,8 +67,11 @@ export async function deleteFromCloudinary(publicId: string): Promise<void> {
         reject(new Error(`Cloudinary delete failed: ${error.message}`));
       } else if (result?.result === "ok") {
         resolve();
+      } else if (result?.result === "not found") {
+        // Image already deleted or never existed — treat as success (idempotent)
+        resolve();
       } else {
-        reject(new Error("Failed to delete image from Cloudinary"));
+        reject(new Error(`Cloudinary delete failed: unexpected result "${result?.result}"`));
       }
     });
   });

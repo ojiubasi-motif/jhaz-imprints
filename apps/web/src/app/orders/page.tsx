@@ -1,0 +1,66 @@
+"use client";
+
+import { useEffect } from "react";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchMyOrders } from "@/store/slices/ordersSlice";
+import { OrderCard } from "@/components/orders/OrderCard";
+import { useRouter } from "next/navigation";
+
+export default function OrdersPage() {
+  const dispatch = useAppDispatch();
+  const router = useRouter();
+  const { items, isLoading, error } = useAppSelector((state) => state.orders);
+  const { user, token } = useAppSelector((state) => state.auth);
+
+  useEffect(() => {
+    if (!token) {
+      router.push("/auth/login?redirect=/orders");
+      return;
+    }
+    dispatch(fetchMyOrders());
+  }, [dispatch, token, router]);
+
+  if (!user) return null; // Redirecting
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+      <h1 className="text-3xl font-bold text-gray-900 mb-8">My Orders</h1>
+
+      {error && (
+        <div role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-700 mb-6">
+          {error}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="card h-40 animate-pulse bg-gray-100" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-lg border border-gray-200">
+          <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+          </svg>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No orders</h3>
+          <p className="mt-1 text-sm text-gray-500">You haven't placed any orders yet.</p>
+          <div className="mt-6">
+            <button
+              onClick={() => router.push("/products")}
+              className="btn-primary px-4 py-2"
+            >
+              Start Shopping
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {items.map((order) => (
+            <OrderCard key={order.id} order={order} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

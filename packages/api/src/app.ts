@@ -7,12 +7,17 @@ import cors from "cors";
 import { connectMongoDB } from "@jhaz-imprints/catalog-db";
 import ordersRouter from "./routes/orders";
 import uploadsRouter from "./routes/uploads";
+import productsRouter from "./routes/products";
+import authRouter from "./routes/auth";
+import adminProductsRouter from "./routes/adminProducts";
+import helmet from "helmet";
 import { AppError, isAppError } from "./errors/AppError";
 import { startNotificationWorker } from "./queues/notificationWorker";
 
 const app = express();
 
 // Middleware
+app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
@@ -33,8 +38,11 @@ const notificationWorker = startNotificationWorker();
 console.log("[App] Notification worker started");
 
 // Routes
+app.use("/api/auth", authRouter);
+app.use("/api/products", productsRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/v1/admin/uploads", uploadsRouter);
+app.use("/api/v1/admin/products", adminProductsRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {

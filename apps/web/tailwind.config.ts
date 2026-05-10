@@ -8,6 +8,9 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+      },
       colors: {
         primary: "#8B5A2B", // Brown for African aesthetics
         secondary: "#D4AF37", // Gold accent

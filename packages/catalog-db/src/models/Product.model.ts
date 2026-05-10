@@ -55,7 +55,6 @@ const productSchema = new Schema<IProduct>(
     },
     slug: {
       type: String,
-      required: true,
       unique: true,
       lowercase: true,
       trim: true,
@@ -113,9 +112,8 @@ const productSchema = new Schema<IProduct>(
   }
 );
 
-// Add compound indexes for common query patterns
+// Compound index for the most common list query: active products by category
 productSchema.index({ category: 1, isActive: 1 });
-productSchema.index({ slug: 1 });
 
 // Pre-save hook to auto-generate slug from name if not provided
 productSchema.pre("save", function (next) {

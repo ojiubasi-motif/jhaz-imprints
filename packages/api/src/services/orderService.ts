@@ -5,8 +5,9 @@
 
 import { prisma } from "@jhaz-imprints/db";
 import { Product } from "@jhaz-imprints/catalog-db";
-import { OrderCreateSchema } from "@jhaz-imprints/shared";
+import { OrderCreateSchema, type MeasurementCreate } from "@jhaz-imprints/shared";
 import { computeOrderTotal } from "./pricingEngine";
+import { initializePayment, verifyPayment } from "./paystackService";
 import { AppError } from "../errors/AppError";
 import { notificationQueue } from "../queues/notificationWorker";
 
@@ -20,10 +21,17 @@ export interface CreateOrderInput {
 /**
  * Create a new order.
  * Wrapped in a Prisma transaction for atomicity.
+ * 
+ * Flow:
+ * 1. Fetch product and validate measurement
+ * 2. Calculate total amount
+ * 3. Create order and payment record in database (with PENDING status)
+ * 4. Initialize payment with Paystack (Step 1: Initialize Transaction)
+ * 5. Return payment authorization URL for frontend redirect
  *
  * @param userId - Customer's user ID
  * @param input - Order creation payload
- * @returns Order object and payment URL
+ * @returns Order object, payment reference, and Paystack authorization URL
  */
 export async function createOrder(userId: string, input: CreateOrderInput) {
   // Fetch product from MongoDB
@@ -59,8 +67,8 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     stylePriceModifier: styleOption.priceModifier,
   });
 
-  // Create order and payment in a transaction
-  const order = await prisma.$transaction(async (tx) => {
+  // Create order and payment in database (Step 0: DB setup)
+  const createdOrder = await prisma.$transaction(async (tx) => {
     // Create order
     const newOrder = await tx.order.create({
       data: {
@@ -71,11 +79,11 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
       },
       include: {
         measurement: true,
-        statusHistory: true,
+        user: true,
       },
     });
 
-    // Initiate payment (placeholder — real Paystack call in production)
+    // Create payment record with unique reference for idempotency
     const reference = `order_${newOrder.id}_${Date.now()}`;
     const payment = await tx.payment.create({
       data: {
@@ -90,41 +98,96 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     return { order: newOrder, payment, reference };
   });
 
-  // In production: call Paystack API to get actual payment URL
-  // For now, return a mock URL
-  const paymentUrl = `https://checkout.paystack.com/${order.reference}`;
+  // Step 1: Initialize transaction with Paystack
+  // This returns the authorization URL that the frontend will redirect to
+  const paystackInit = await initializePayment(
+    createdOrder.order.user.email,
+    totalAmount,
+    createdOrder.reference,
+    {
+      orderId: createdOrder.order.id,
+      userId,
+      customerEmail: createdOrder.order.user.email,
+    }
+  );
 
   return {
-    order: order.order,
-    payment: order.payment,
-    paymentUrl,
+    order: createdOrder.order,
+    payment: createdOrder.payment,
+    paymentUrl: paystackInit.authorizationUrl, // Frontend redirects user to this URL
+    reference: createdOrder.reference,
   };
 }
 
 /**
  * Confirm payment (idempotent webhook handler).
- * Idempotency is guaranteed by the unique constraint on Payment.reference.
+ * 
+ * Flow:
+ * 1. Check if payment already processed (idempotency)
+ * 2. Verify transaction status with Paystack (Step 3: Verify Transaction)
+ * 3. If successful, update order and payment status atomically
+ * 4. Notify customer of order confirmation
+ * 
+ * Idempotency is guaranteed by:
+ * - Unique constraint on Payment.reference
+ * - Checking if payment is already COMPLETED before processing
+ * - Re-checking inside transaction to prevent race conditions
  *
- * @param reference - Payment reference from provider
- * @returns Updated order and payment
+ * @param reference - Payment reference from Paystack
+ * @returns Updated order and payment with processing status
  */
 export async function confirmPayment(reference: string) {
-  // Check if payment already processed (idempotency)
+  // Check if payment already processed (idempotency check #1)
   const existingPayment = await prisma.payment.findUnique({
     where: { reference },
   });
-
-  if (existingPayment?.status === "COMPLETED") {
-    return { order: null, payment: existingPayment, alreadyProcessed: true };
-  }
 
   if (!existingPayment) {
     throw new AppError("Payment not found", 404);
   }
 
+  // If already completed, return early (idempotency)
+  if (existingPayment.status === "COMPLETED") {
+    return { order: null, payment: existingPayment, alreadyProcessed: true };
+  }
+
+  // Step 3: Verify transaction with Paystack
+  let paystackVerification;
+  try {
+    paystackVerification = await verifyPayment(reference);
+  } catch (error) {
+    console.error("Paystack verification failed:", error);
+    throw new AppError("Unable to verify payment with Paystack", 500);
+  }
+
+  // Check if Paystack reports payment as successful
+  if (paystackVerification.status !== "success") {
+    throw new AppError(
+      `Payment verification failed with status: ${paystackVerification.status}`,
+      400
+    );
+  }
+
+  // Verify amount matches
+  if (paystackVerification.amount !== existingPayment.amount) {
+    throw new AppError(
+      "Payment amount mismatch with Paystack verification",
+      400
+    );
+  }
+
   // Update payment and order status atomically
   const updated = await prisma.$transaction(async (tx) => {
-    // Mark payment as completed
+    // Re-read payment inside transaction for consistency (prevents race between
+    // the outer read and this update — two concurrent calls can both pass the
+    // outer check before either writes, so we must re-check here).
+    const lockedPayment = await tx.payment.findUnique({ where: { reference } });
+    if (lockedPayment?.status === "COMPLETED") {
+      // Another concurrent request already processed this payment
+      return { order: null, payment: lockedPayment, alreadyProcessed: true };
+    }
+
+    // Mark payment as completed (verified with Paystack)
     const payment = await tx.payment.update({
       where: { reference },
       data: { status: "COMPLETED" },
@@ -140,29 +203,37 @@ export async function confirmPayment(reference: string) {
       },
     });
 
-    // Log status transition
-    await tx.orderStatusHistory.create({
-      data: {
-        orderId: order.id,
-        status: "CONFIRMED",
-        note: "Payment confirmed",
-      },
+    // Guard: only insert history entry if not already present
+    const existingHistory = await tx.orderStatusHistory.findFirst({
+      where: { orderId: order.id, status: "CONFIRMED" },
     });
+    if (!existingHistory) {
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: order.id,
+          status: "CONFIRMED",
+          note: "Payment confirmed via Paystack verification",
+        },
+      });
+    }
 
-    return { order, payment };
+    return { order, payment, alreadyProcessed: false };
   });
 
-  // Enqueue notification job
-  if (updated.order) {
+  // Enqueue notification job only if this call actually processed the payment
+  if (updated.order && !updated.alreadyProcessed) {
     await notificationQueue.add("order-confirmed", {
       orderId: updated.order.id,
       userId: updated.order.userId,
       userEmail: updated.order.user.email,
+      userPhone: updated.order.user.phone,
       userName: updated.order.user.firstName,
+      totalPrice: updated.order.totalAmount,
+      measurement: updated.order.measurement,
     });
   }
 
-  return { order: updated.order, payment: updated.payment, alreadyProcessed: false };
+  return { order: updated.order, payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
 }
 
 /**
@@ -213,4 +284,20 @@ export async function getUserOrders(userId: string, skip = 0, take = 10) {
   const total = await prisma.order.count({ where: { userId } });
 
   return { orders, total, skip, take };
+}
+
+/**
+ * Create a new measurement profile for a user.
+ */
+export async function createMeasurement(userId: string, input: MeasurementCreate) {
+  // If this is set as default, optionally unset others (not implemented for simplicity)
+  
+  const measurement = await prisma.measurement.create({
+    data: {
+      userId,
+      ...input,
+    },
+  });
+
+  return measurement;
 }

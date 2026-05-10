@@ -56,7 +56,7 @@ export async function connectMongoDB(retryAttempt = 0): Promise<Connection> {
       await new Promise((resolve) => setTimeout(resolve, delay));
       return connectMongoDB(retryAttempt + 1);
     }
-
+ 
     console.error(
       `[MongoDB] Failed to connect after ${MAX_RETRIES} attempts.`,
       error instanceof Error ? error.message : error

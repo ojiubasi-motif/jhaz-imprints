@@ -1,81 +1,78 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { OrderQueue } from "./pages/OrderQueue";
-import { ProductEditor } from "./pages/ProductEditor";
-import { AnalyticsSummary } from "./components/AnalyticsSummary";
-import "./index.css";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Provider } from 'react-redux';
+import { store } from './store';
+import { useAppSelector } from './store/hooks';
 
-const queryClient = new QueryClient();
+// Layout & Pages
+import { Sidebar } from './components/layout/Sidebar';
+import { LoginPage } from './pages/LoginPage';
+import { Dashboard } from './pages/Dashboard';
+import { OrderQueue } from './pages/OrderQueue';
+import { ProductEditor } from './pages/ProductEditor';
 
-function App() {
-  // Simple role-based routing (in production, use a proper router like TanStack Router)
-  const userRole = localStorage.getItem("user_role") || "tailor";
-  const currentView = new URLSearchParams(window.location.search).get("view") || "orders";
+import './index.css';
 
+// Protected Route Wrapper
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { token, user } = useAppSelector((state) => state.auth);
+  
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  // Optionally check user.role === 'ADMIN' here
+  
   return (
-    <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow">
-          <div className="max-w-7xl mx-auto px-4 py-6">
-            <div className="flex justify-between items-center">
-              <h1 className="text-2xl font-bold">Jhaz-imprints Admin</h1>
-              <div className="text-sm text-muted">
-                Logged in as: <span className="font-semibold capitalize">{userRole}</span>
-              </div>
-            </div>
-
-            {/* Navigation */}
-            <nav className="mt-4 flex gap-4">
-              {userRole === "tailor" && (
-                <a
-                  href="?view=orders"
-                  className={`px-4 py-2 rounded ${
-                    currentView === "orders" ? "bg-primary text-white" : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  Order Queue
-                </a>
-              )}
-              {userRole === "admin" && (
-                <>
-                  <a
-                    href="?view=analytics"
-                    className={`px-4 py-2 rounded ${
-                      currentView === "analytics"
-                        ? "bg-primary text-white"
-                        : "text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    Analytics
-                  </a>
-                  <a
-                    href="?view=products"
-                    className={`px-4 py-2 rounded ${
-                      currentView === "products"
-                        ? "bg-primary text-white"
-                        : "text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    Products
-                  </a>
-                </>
-              )}
-            </nav>
-          </div>
-        </header>
-
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          {currentView === "orders" && userRole === "tailor" && <OrderQueue />}
-          {currentView === "analytics" && userRole === "admin" && <AnalyticsSummary />}
-          {currentView === "products" && userRole === "admin" && <ProductEditor />}
+    <div className="flex h-screen overflow-hidden bg-gray-100">
+      <Sidebar />
+      <div className="flex flex-col flex-1 w-0 overflow-hidden">
+        <main className="flex-1 relative overflow-y-auto focus:outline-none">
+          {children}
         </main>
       </div>
-    </QueryClientProvider>
+    </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+function App() {
+  return (
+    <Provider store={store}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route 
+            path="/" 
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/orders" 
+            element={
+              <ProtectedRoute>
+                <OrderQueue />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/products" 
+            element={
+              <ProtectedRoute>
+                <ProductEditor />
+              </ProtectedRoute>
+            } 
+          />
+        </Routes>
+      </BrowserRouter>
+    </Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>

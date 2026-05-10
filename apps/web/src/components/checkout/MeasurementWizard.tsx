@@ -13,6 +13,8 @@ import BodyMeasurementsStep from "./steps/BodyMeasurementsStep";
 import StyleChoicesStep from "./steps/StyleChoicesStep";
 import FabricColourStep from "./steps/FabricColourStep";
 import ReviewPayStep from "./steps/ReviewPayStep";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { updateDraft } from "@/store/slices/cartSlice";
 
 const STEPS = [
   "Body measurements",
@@ -21,8 +23,6 @@ const STEPS = [
   "Review & pay",
 ] as const;
 
-const STORAGE_KEY = "measurement_wizard_draft";
-
 export interface MeasurementWizardProps {
   productId: string;
   onSuccess?: (orderId: string) => void;
@@ -30,6 +30,8 @@ export interface MeasurementWizardProps {
 
 export default function MeasurementWizard({ productId, onSuccess }: MeasurementWizardProps) {
   const [currentStep, setCurrentStep] = useState(0);
+  const dispatch = useAppDispatch();
+  const draft = useAppSelector((state) => state.cart.draft);
 
   const methods = useForm<OrderCreate>({
     resolver: zodResolver(OrderCreateSchema),
@@ -38,30 +40,18 @@ export default function MeasurementWizard({ productId, onSuccess }: MeasurementW
       measurementId: "",
       productId,
       notes: "",
+      ...draft,
     },
   });
 
-  // Load draft from localStorage on mount
-  useEffect(() => {
-    const draft = localStorage.getItem(STORAGE_KEY);
-    if (draft) {
-      try {
-        const parsed = JSON.parse(draft);
-        methods.reset(parsed);
-      } catch (err) {
-        console.error("Failed to load draft:", err);
-      }
-    }
-  }, [methods]);
-
-  // Save draft to localStorage on form change
+  // Save draft to Redux on form change
   useEffect(() => {
     const subscription = methods.watch((data) => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      dispatch(updateDraft(data));
     });
 
     return () => subscription.unsubscribe();
-  }, [methods]);
+  }, [methods, dispatch]);
 
   const handleNext = async () => {
     // Validate current step before proceeding
@@ -78,8 +68,6 @@ export default function MeasurementWizard({ productId, onSuccess }: MeasurementW
   };
 
   const handleSuccess = (orderId: string) => {
-    // Clear draft after successful order
-    localStorage.removeItem(STORAGE_KEY);
     onSuccess?.(orderId);
   };
 
@@ -113,10 +101,10 @@ export default function MeasurementWizard({ productId, onSuccess }: MeasurementW
       <FormProvider {...methods}>
         <form onSubmit={methods.handleSubmit(() => {})} className="space-y-6">
           {currentStep === 0 && <BodyMeasurementsStep />}
-          {currentStep === 1 && <StyleChoicesStep productId={productId} />}
-          {currentStep === 2 && <FabricColourStep productId={productId} />}
+          {currentStep === 1 && <StyleChoicesStep />}
+          {currentStep === 2 && <FabricColourStep />}
           {currentStep === 3 && (
-            <ReviewPayStep productId={productId} onSuccess={handleSuccess} />
+            <ReviewPayStep />
           )}
 
           {/* Navigation Buttons */}

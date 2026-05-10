@@ -1,11 +1,12 @@
 /**
  * Body Measurements Step — collect customer body dimensions.
+ * Features interactive BodyDiagram with clickable regions that focus corresponding inputs.
  */
 
 "use client";
 
 import { useFormContext } from "react-hook-form";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { OrderCreate } from "@jhaz-imprints/shared";
 import BodyDiagram from "../BodyDiagram";
 
@@ -27,6 +28,28 @@ const FIELDS: Array<{
 export default function BodyMeasurementsStep() {
   const { register, formState: { errors }, watch } = useFormContext<OrderCreate>();
   const [highlightedPart, setHighlightedPart] = useState<MeasurementField | null>(null);
+  const inputRefs = useRef<Record<MeasurementField, HTMLInputElement | null>>({
+    chest: null,
+    waist: null,
+    hip: null,
+    shoulder: null,
+    armLength: null,
+    length: null,
+  });
+
+  const handleDiagramClick = (part: MeasurementField) => {
+    setHighlightedPart(part);
+    // Focus the corresponding input field
+    inputRefs.current[part]?.focus();
+  };
+
+  const handleInputFocus = (field: MeasurementField) => {
+    setHighlightedPart(field);
+  };
+
+  const handleInputBlur = () => {
+    setHighlightedPart(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -51,10 +74,17 @@ export default function BodyMeasurementsStep() {
                 max="250"
                 step="0.5"
                 placeholder="0"
+                ref={(el) => {
+                  if (el) inputRefs.current[field.key] = el;
+                }}
                 {...register(field.key)}
-                onFocus={() => setHighlightedPart(field.key)}
-                onBlur={() => setHighlightedPart(null)}
-                className="input w-full"
+                onFocus={() => handleInputFocus(field.key)}
+                onBlur={handleInputBlur}
+                className={`input w-full transition-colors ${
+                  highlightedPart === field.key
+                    ? "ring-2 ring-yellow-400 bg-yellow-50"
+                    : ""
+                }`}
               />
               {errors[field.key] && (
                 <p role="alert" className="text-sm text-error mt-1">
@@ -67,14 +97,16 @@ export default function BodyMeasurementsStep() {
 
         {/* Right: Body Diagram */}
         <div className="flex items-center justify-center">
-          <BodyDiagram highlightedPart={highlightedPart} />
+          <BodyDiagram 
+            highlightedPart={highlightedPart}
+            onRegionClick={handleDiagramClick}
+          />
         </div>
       </div>
 
       <div className="rounded-lg bg-blue-50 p-4">
         <p className="text-sm text-gray-700">
-          💡 <strong>Tip:</strong> Measure over your normal clothing. Use a soft measuring tape
-          and keep it snug but not tight.
+          💡 <strong>Tip:</strong> Click any body part in the diagram or input field to focus that measurement. Measure over your normal clothing using a soft measuring tape kept snug but not tight.
         </p>
       </div>
     </div>

@@ -39,6 +39,7 @@ model User {
   phone     String?
   firstName String?
   lastName  String?
+  password  String
   role      Role     @default(CUSTOMER)
   
   measurements    Measurement[]

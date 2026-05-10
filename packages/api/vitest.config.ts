@@ -8,6 +8,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "../../");
 config({ path: join(rootDir, ".env") });
 
+// Override DATABASE_URL with TEST_DATABASE_URL for tests
+if (process.env.TEST_DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+}
+
 export default defineConfig({
   test: {
     environment: "node",

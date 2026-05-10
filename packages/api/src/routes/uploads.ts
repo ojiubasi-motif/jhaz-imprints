@@ -6,6 +6,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { authenticate, type AuthenticatedRequest } from "../middleware/authenticate";
+import { authorize } from "../middleware/authorize";
 import { AppError } from "../errors/AppError";
 import * as uploadService from "../services/uploadService";
 
@@ -30,25 +31,32 @@ const upload = multer({
 router.post(
   "/",
   authenticate,
+  authorize("ADMIN"),
   (req: AuthenticatedRequest, res, next) => {
-    // Check admin role (optional — can allow any authenticated user)
-    if (req.user?.role !== "ADMIN") {
-      return res.status(403).json({ error: "Forbidden: Admin role required" });
-    }
-    next();
-  },
-  upload.single("file"),
-  async (req: AuthenticatedRequest, res, next) => {
-    try {
-      if (!req.file) {
-        throw new AppError("No file provided", 400);
+    // Accept any field name — avoids multer "Unexpected field" errors
+    upload.any()(req, res, (err: any) => {
+      const files = req.files as Express.Multer.File[] | undefined;
+      const file = files?.[0];
+
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({ error: "File too large. Max 5 MB." });
+        }
+        if (err instanceof multer.MulterError) {
+          return res.status(400).json({ error: `Upload error: ${err.message}` });
+        }
+        return next(err);
       }
 
-      const result = await uploadService.uploadToCloudinary(req.file);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
+      if (!file) {
+        return res.status(400).json({ error: "No file provided. Send an image as form-data with any key name." });
+      }
+
+      uploadService
+        .uploadToCloudinary(file)
+        .then((result) => res.status(201).json(result))
+        .catch(next);
+    });
   }
 );
 
@@ -59,12 +67,7 @@ router.post(
 router.delete(
   "/",
   authenticate,
-  (req: AuthenticatedRequest, res, next) => {
-    if (req.user?.role !== "ADMIN") {
-      return res.status(403).json({ error: "Forbidden: Admin role required" });
-    }
-    next();
-  },
+  authorize("ADMIN"),
   async (req: AuthenticatedRequest, res, next) => {
     try {
       const { publicId } = req.body;

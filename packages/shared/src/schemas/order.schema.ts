@@ -7,10 +7,10 @@ import { z } from "zod";
  */
 
 export const OrderCreateSchema = z.object({
-  userId: z.string().cuid("Invalid user ID"),
   measurementId: z.string().cuid("Invalid measurement ID"),
-  totalAmount: z.number().positive("Amount must be positive"),
-  currency: z.string().default("NGN").optional(),
+  productId: z.string().min(1, "Product ID is required"),
+  fabricOptionName: z.string().min(1, "Fabric option is required"),
+  styleOptionName: z.string().min(1, "Style option is required"),
   notes: z.string().max(1000, "Notes cannot exceed 1000 characters").optional(),
 });
 
@@ -38,3 +38,20 @@ export const PaymentCreateSchema = z.object({
 });
 
 export type PaymentCreate = z.infer<typeof PaymentCreateSchema>;
+
+/**
+ * Schema for creating a new measurement profile.
+ */
+export const MeasurementCreateSchema = z.object({
+  profileName: z.string().min(1, "Profile name is required").default("Default"),
+  isDefault: z.boolean().default(false),
+  chest: z.number().positive("Must be positive").optional(),
+  waist: z.number().positive("Must be positive").optional(),
+  hip: z.number().positive("Must be positive").optional(),
+  shoulder: z.number().positive("Must be positive").optional(),
+  armLength: z.number().positive("Must be positive").optional(),
+  length: z.number().positive("Must be positive").optional(),
+  notes: z.string().max(1000).optional(),
+});
+
+export type MeasurementCreate = z.infer<typeof MeasurementCreateSchema>;

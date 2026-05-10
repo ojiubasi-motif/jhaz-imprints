@@ -1,18 +1,17 @@
 /**
  * BullMQ notification worker.
  * Listens to the 'notifications' queue and processes async jobs.
- * Uses email templates and WhatsApp Cloud API integration.
+ * Channel: Email only (customer confirmation + admin/tailor alert).
+ *
+ * Production-hardened:
+ * - Every external call is wrapped in try/catch so one email
+ *   failing never blocks the other.
+ * - All data fields have safe defaults to prevent runtime crashes.
  */
 
 import { Queue, Worker } from "bullmq";
 import nodemailer from "nodemailer";
-import { orderConfirmedEmail, statusUpdateEmail } from "../integrations/email/templates";
-import { sendTextMessage } from "../integrations/whatsapp/client";
-import {
-  orderConfirmedMessage,
-  statusUpdatedMessage,
-  newOrderAlertMessage,
-} from "../integrations/whatsapp/messages";
+import { orderConfirmedEmail, statusUpdateEmail, adminOrderAlertEmail } from "../integrations/email/templates";
 
 // Queue instance (shared across handlers)
 export const notificationQueue = new Queue("notifications", {
@@ -31,134 +30,119 @@ export const notificationQueue = new Queue("notifications", {
 
 /**
  * Handler for 'order-confirmed' job.
- * Sends confirmation email and WhatsApp message to customer.
- * Also alerts tailor with complete measurement summary.
+ * 1. Sends confirmation email to customer
+ * 2. Sends order alert email to admin/tailor (with full measurements)
+ *
+ * Each email is independent — if one fails, the other still fires.
  */
 async function handleOrderConfirmed(jobData: {
   orderId: string;
   userId: string;
-  userEmail: string;
-  userPhone: string;
+  userEmail?: string;
   userName?: string;
-  productName: string;
-  deliveryDate: string;
-  measurement?: {
-    bust?: number;
-    waist?: number;
-    hip?: number;
-    shoulder?: number;
-    sleeveLen?: number;
-    height?: number;
-  };
-  totalPrice: number;
+  productName?: string;
+  deliveryDate?: string;
+  measurement?: Record<string, unknown>;
+  totalPrice?: number;
   fabricOption?: string;
   colorOption?: string;
   styleOption?: string;
-  tailorName?: string;
 }) {
-  try {
-    console.log(`[Worker] Processing order-confirmed for order ${jobData.orderId}`);
+  console.log(`[Worker] Processing order-confirmed for order ${jobData.orderId}`);
 
-    const orderData = {
-      id: jobData.orderId,
-      productName: jobData.productName,
-      deliveryDate: new Date(jobData.deliveryDate),
-      measurement: jobData.measurement,
-      totalPrice: jobData.totalPrice,
-      fabricOption: jobData.fabricOption,
-      colorOption: jobData.colorOption,
-      styleOption: jobData.styleOption,
-      customerName: jobData.userName,
-      tailorName: jobData.tailorName || "Jhaz-imprints Team",
-    };
+  const orderData = {
+    id: jobData.orderId,
+    productName: jobData.productName || "Custom Outfit",
+    deliveryDate: jobData.deliveryDate
+      ? new Date(jobData.deliveryDate)
+      : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    measurement: jobData.measurement as any,
+    totalPrice: jobData.totalPrice ?? 0,
+    fabricOption: jobData.fabricOption,
+    colorOption: jobData.colorOption,
+    styleOption: jobData.styleOption,
+    customerName: jobData.userName || "Customer",
+    customerEmail: jobData.userEmail,
+  };
 
-    // Send HTML email to customer
-    const emailTemplate = orderConfirmedEmail(orderData);
-    await sendEmail(jobData.userEmail, emailTemplate.subject, emailTemplate.html);
-    console.log(`[Worker] ✓ Email sent to ${jobData.userEmail}`);
-
-    // Send WhatsApp message to customer
-    if (jobData.userPhone) {
-      const whatsappMessage = orderConfirmedMessage(orderData);
-      const result = await sendTextMessage(jobData.userPhone, whatsappMessage);
-      if (result.success) {
-        console.log(`[Worker] ✓ WhatsApp sent to customer ${jobData.userPhone}`);
-      } else {
-        console.warn(`[Worker] WhatsApp failed for customer: ${result.error}`);
-      }
+  // 1. Send confirmation email to customer (non-fatal)
+  if (jobData.userEmail) {
+    try {
+      const emailTemplate = orderConfirmedEmail(orderData);
+      await sendEmail(jobData.userEmail, emailTemplate.subject, emailTemplate.html);
+      console.log(`[Worker] ✓ Confirmation email sent to ${jobData.userEmail}`);
+    } catch (error) {
+      console.error(
+        `[Worker] ✗ Customer email failed for ${jobData.userEmail}:`,
+        error instanceof Error ? error.message : error
+      );
     }
-
-    // Send tailor alert with complete measurements
-    const tailorPhone = process.env.TAILOR_PHONE;
-    if (tailorPhone) {
-      const tailorAlert = newOrderAlertMessage(orderData);
-      const result = await sendTextMessage(tailorPhone, tailorAlert);
-      if (result.success) {
-        console.log(`[Worker] ✓ Tailor alert sent to ${tailorPhone}`);
-      } else {
-        console.warn(`[Worker] Tailor alert failed: ${result.error}`);
-      }
-    }
-
-    console.log(`[Worker] ✓ Order confirmation completed for order ${jobData.orderId}`);
-  } catch (error) {
-    console.error(
-      `[Worker] Error processing order-confirmed:`,
-      error instanceof Error ? error.message : error
-    );
-    throw error;
+  } else {
+    console.warn(`[Worker] ⚠ No customer email for order ${jobData.orderId}, skipping`);
   }
+
+  // 2. Send order alert email to admin/tailor (non-fatal)
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (adminEmail) {
+    try {
+      const adminTemplate = adminOrderAlertEmail(orderData);
+      await sendEmail(adminEmail, adminTemplate.subject, adminTemplate.html);
+      console.log(`[Worker] ✓ Admin alert email sent to ${adminEmail}`);
+    } catch (error) {
+      console.error(
+        `[Worker] ✗ Admin email failed for ${adminEmail}:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  } else {
+    console.warn(`[Worker] ⚠ No ADMIN_EMAIL configured, skipping admin alert`);
+  }
+
+  console.log(`[Worker] ✓ Order confirmation completed for order ${jobData.orderId}`);
 }
 
 /**
  * Handler for 'status-updated' job.
- * Notifies customer of status change via email and WhatsApp.
+ * Notifies customer of status change via email.
  */
 async function handleStatusUpdated(jobData: {
   orderId: string;
   userId: string;
-  userEmail: string;
-  userPhone: string;
-  productName: string;
-  deliveryDate: string;
+  userEmail?: string;
+  productName?: string;
+  deliveryDate?: string;
   newStatus: string;
   note?: string;
-  totalPrice: number;
+  totalPrice?: number;
 }) {
-  try {
-    console.log(`[Worker] Processing status-updated for order ${jobData.orderId}`);
+  console.log(`[Worker] Processing status-updated for order ${jobData.orderId}`);
 
-    const orderData = {
-      id: jobData.orderId,
-      productName: jobData.productName,
-      deliveryDate: new Date(jobData.deliveryDate),
-      totalPrice: jobData.totalPrice,
-    };
+  const orderData = {
+    id: jobData.orderId,
+    productName: jobData.productName || "Custom Outfit",
+    deliveryDate: jobData.deliveryDate
+      ? new Date(jobData.deliveryDate)
+      : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    totalPrice: jobData.totalPrice ?? 0,
+  };
 
-    // Send status update email
-    const emailTemplate = statusUpdateEmail(orderData, jobData.newStatus);
-    await sendEmail(jobData.userEmail, emailTemplate.subject, emailTemplate.html);
-    console.log(`[Worker] ✓ Status email sent to ${jobData.userEmail}`);
-
-    // Send WhatsApp status update
-    if (jobData.userPhone) {
-      const whatsappMessage = statusUpdatedMessage(orderData, jobData.newStatus);
-      const result = await sendTextMessage(jobData.userPhone, whatsappMessage);
-      if (result.success) {
-        console.log(`[Worker] ✓ Status WhatsApp sent to ${jobData.userPhone}`);
-      } else {
-        console.warn(`[Worker] Status WhatsApp failed: ${result.error}`);
-      }
+  // Send status update email (non-fatal)
+  if (jobData.userEmail) {
+    try {
+      const emailTemplate = statusUpdateEmail(orderData, jobData.newStatus);
+      await sendEmail(jobData.userEmail, emailTemplate.subject, emailTemplate.html);
+      console.log(`[Worker] ✓ Status email sent to ${jobData.userEmail}`);
+    } catch (error) {
+      console.error(
+        `[Worker] ✗ Status email failed for ${jobData.userEmail}:`,
+        error instanceof Error ? error.message : error
+      );
     }
-
-    console.log(`[Worker] ✓ Status update completed for order ${jobData.orderId}`);
-  } catch (error) {
-    console.error(
-      `[Worker] Error processing status-updated:`,
-      error instanceof Error ? error.message : error
-    );
-    throw error;
+  } else {
+    console.warn(`[Worker] ⚠ No email for order ${jobData.orderId}, skipping status email`);
   }
+
+  console.log(`[Worker] ✓ Status update completed for order ${jobData.orderId}`);
 }
 
 /**

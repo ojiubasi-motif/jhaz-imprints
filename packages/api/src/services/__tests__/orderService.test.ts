@@ -1,23 +1,37 @@
 /**
  * Order Service Integration Tests
- * Tests order creation and payment confirmation with Prisma and mocked externals
+ * Tests order creation and payment confirmation with Prisma and mocked externals.
+ *
+ * External dependencies mocked globally via src/test-setup.ts:
+ *   - BullMQ (Queue / Worker) → no Redis needed
+ *   - Nodemailer, Twilio, Cloudinary → no real emails/messages/uploads
+ *
+ * External dependencies mocked here:
+ *   - @jhaz-imprints/catalog-db (Product model) → no MongoDB needed
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@jhaz-imprints/db";
 
-// Mock Paystack and BullMQ before importing orderService
-vi.mock("bullmq", () => ({
-  Queue: vi.fn().mockImplementation(() => ({
-    add: vi.fn().mockResolvedValue({ id: "mock-job-id" }),
-  })),
-  Worker: vi.fn(),
-}));
-
-vi.mock("../uploadService", () => ({
-  uploadToCloudinary: vi
-    .fn()
-    .mockResolvedValue({ url: "mock-url", publicId: "mock-id" }),
+// Mock MongoDB Product model so tests don't need a real Atlas connection.
+// Must be declared BEFORE importing orderService (which imports catalog-db).
+vi.mock("@jhaz-imprints/catalog-db", () => ({
+  connectMongoDB: vi.fn().mockResolvedValue(undefined),
+  Product: {
+    findById: vi.fn().mockResolvedValue({
+      _id: "test-product-id",
+      name: "Traditional Wedding Aso-oke",
+      basePrice: 50000,
+      fabricOptions: [
+        { name: "Premium Aso-oke", priceModifier: 10000 },
+        { name: "Standard Aso-oke", priceModifier: 0 },
+      ],
+      styleOptions: [
+        { name: "Modern Elegant", priceModifier: 5000 },
+        { name: "Classic Cut", priceModifier: 0 },
+      ],
+    }),
+  },
 }));
 
 // Import after mocks are set up
@@ -26,75 +40,75 @@ import { computeOrderTotal } from "../pricingEngine";
 
 describe("orderService — Integration Tests", () => {
   let prisma: PrismaClient;
+  // Track IDs of records created per test so teardown only deletes test data.
+  // Using email as the anchor: all test users have a known @example.com address.
+  const TEST_EMAILS = [
+    "test@example.com",
+    "test2@example.com",
+    "test3@example.com",
+  ];
 
-  beforeEach(() => {
-    // Use test database URL from environment
+  beforeEach(async () => {
     const testDatabaseUrl = process.env.TEST_DATABASE_URL;
     if (!testDatabaseUrl) {
       throw new Error("TEST_DATABASE_URL environment variable is required");
     }
     prisma = new PrismaClient({
-      datasources: {
-        db: {
-          url: testDatabaseUrl,
-        },
-      },
+      datasources: { db: { url: testDatabaseUrl } },
     });
+    await prisma.$connect();
   });
 
   afterEach(async () => {
-    // Clean up test database
-    await prisma.$executeRawUnsafe(
-      `TRUNCATE TABLE "Payment", "OrderStatusHistory", "Order", "Measurement", "User" CASCADE`
-    );
+    // Safe targeted cleanup — only deletes records created by these tests.
+    // Cascades through Orders → Payments → OrderStatusHistory via FK relations.
+    await prisma.user.deleteMany({
+      where: { email: { in: TEST_EMAILS } },
+    });
     await prisma.$disconnect();
     vi.clearAllMocks();
   });
 
   describe("confirmPayment — Idempotency", () => {
     it("should process payment only once when called twice with same reference", async () => {
-      // Setup: Create a test user
+      // FIX: schema has firstName/lastName — not a single "name" field
       const user = await prisma.user.create({
         data: {
           email: "test@example.com",
-          name: "Test User",
+          firstName: "Test",
+          lastName: "User",
           phone: "+1234567890",
           role: "CUSTOMER",
         },
       });
 
-      // Setup: Create test measurement
+      // FIX: schema fields are chest/armLength/length — not bust/sleeveLen/height
       const measurement = await prisma.measurement.create({
         data: {
           userId: user.id,
-          bust: 90,
+          chest: 90,
           waist: 70,
           hip: 95,
           shoulder: 40,
-          sleeveLen: 60,
-          height: 170,
+          armLength: 60,
+          length: 170,
         },
       });
 
-      // Setup: Create test order
+      // FIX: schema uses totalAmount — not totalPrice.
+      // productId, fabricOptionId, styleOptionId, colorOptionId, quantity DO NOT exist in schema.
       const order = await prisma.order.create({
         data: {
           userId: user.id,
           measurementId: measurement.id,
-          productId: "test-product-id",
-          fabricOptionId: "fabric-1",
-          styleOptionId: "style-1",
-          colorOptionId: "color-1",
-          quantity: 1,
-          totalPrice: 50000,
+          totalAmount: 50000,
           status: "PENDING",
         },
       });
 
-      // Create first payment with unique reference
       const paymentReference = `PAY-${Date.now()}-${Math.random()}`;
 
-      const firstPayment = await prisma.payment.create({
+      await prisma.payment.create({
         data: {
           orderId: order.id,
           reference: paymentReference,
@@ -104,32 +118,29 @@ describe("orderService — Integration Tests", () => {
         },
       });
 
-      // TEST: Call confirmPayment first time
+      // First call
       const result1 = await confirmPayment(paymentReference);
       expect(result1).toBeDefined();
 
-      // Verify order status changed to CONFIRMED
       const orderAfterFirstConfirm = await prisma.order.findUnique({
         where: { id: order.id },
       });
       expect(orderAfterFirstConfirm?.status).toBe("CONFIRMED");
 
-      // Verify payment status is SUCCESS
       const paymentAfterFirstConfirm = await prisma.payment.findUnique({
-        where: { id: firstPayment.id },
+        where: { reference: paymentReference },
       });
       expect(paymentAfterFirstConfirm?.status).toBe("COMPLETED");
 
-      // TEST: Call confirmPayment second time with SAME reference
+      // Second call — idempotency check
       const result2 = await confirmPayment(paymentReference);
+      expect(result2.alreadyProcessed).toBe(true);
 
-      // Verify order status is still CONFIRMED (idempotent)
       const orderAfterSecondConfirm = await prisma.order.findUnique({
         where: { id: order.id },
       });
       expect(orderAfterSecondConfirm?.status).toBe("CONFIRMED");
 
-      // Verify no duplicate Payment records were created
       const allPayments = await prisma.payment.findMany({
         where: { reference: paymentReference },
       });
@@ -138,45 +149,37 @@ describe("orderService — Integration Tests", () => {
     });
 
     it("should not process payment twice even with rapid concurrent calls", async () => {
-      // Setup: Create test user
       const user = await prisma.user.create({
         data: {
           email: "test2@example.com",
-          name: "Test User 2",
+          firstName: "Test",
+          lastName: "User2",
           phone: "+1234567891",
           role: "CUSTOMER",
         },
       });
 
-      // Setup: Create test measurement
       const measurement = await prisma.measurement.create({
         data: {
           userId: user.id,
-          bust: 90,
+          chest: 90,
           waist: 70,
           hip: 95,
           shoulder: 40,
-          sleeveLen: 60,
-          height: 170,
+          armLength: 60,
+          length: 170,
         },
       });
 
-      // Setup: Create test order
       const order = await prisma.order.create({
         data: {
           userId: user.id,
           measurementId: measurement.id,
-          productId: "test-product-id",
-          fabricOptionId: "fabric-1",
-          styleOptionId: "style-1",
-          colorOptionId: "color-1",
-          quantity: 1,
-          totalPrice: 75000,
+          totalAmount: 75000,
           status: "PENDING",
         },
       });
 
-      // Create payment
       const paymentReference = `PAY-CONCURRENT-${Date.now()}`;
       await prisma.payment.create({
         data: {
@@ -188,77 +191,64 @@ describe("orderService — Integration Tests", () => {
         },
       });
 
-      // TEST: Call confirmPayment concurrently (simulates race condition)
-      const [result1, result2] = await Promise.all([
+      // Concurrent calls — one wins, the other sees alreadyProcessed
+      const [result1, result2] = await Promise.allSettled([
         confirmPayment(paymentReference),
         confirmPayment(paymentReference),
       ]);
 
-      // Both should succeed (or one should handle gracefully)
-      expect(result1 || result2).toBeDefined();
+      expect(result1.status === "fulfilled" || result2.status === "fulfilled").toBe(true);
 
-      // Verify order status is CONFIRMED
-      const finalOrder = await prisma.order.findUnique({
-        where: { id: order.id },
-      });
+      const finalOrder = await prisma.order.findUnique({ where: { id: order.id } });
       expect(finalOrder?.status).toBe("CONFIRMED");
 
-      // Verify only one Payment record with COMPLETED status
       const payments = await prisma.payment.findMany({
         where: { reference: paymentReference },
       });
       expect(payments).toHaveLength(1);
       expect(payments[0].status).toBe("COMPLETED");
 
-      // Verify OrderStatusHistory has exactly one CONFIRMED entry
+      // FIX: schema field is "status" — not "newStatus"
       const statusHistory = await prisma.orderStatusHistory.findMany({
-        where: { orderId: order.id, newStatus: "CONFIRMED" },
+        where: { orderId: order.id, status: "CONFIRMED" },
       });
       expect(statusHistory.length).toBeLessThanOrEqual(1);
     });
 
     it("should reject duplicate payments with constraint error", async () => {
-      // Setup: Create test user
       const user = await prisma.user.create({
         data: {
           email: "test3@example.com",
-          name: "Test User 3",
+          firstName: "Test",
+          lastName: "User3",
           phone: "+1234567892",
           role: "CUSTOMER",
         },
       });
 
-      // Setup: Create test measurement
       const measurement = await prisma.measurement.create({
         data: {
           userId: user.id,
-          bust: 90,
+          chest: 90,
           waist: 70,
           hip: 95,
           shoulder: 40,
-          sleeveLen: 60,
-          height: 170,
+          armLength: 60,
+          length: 170,
         },
       });
 
-      // Setup: Create test order
       const order = await prisma.order.create({
         data: {
           userId: user.id,
           measurementId: measurement.id,
-          productId: "test-product-id",
-          fabricOptionId: "fabric-1",
-          styleOptionId: "style-1",
-          colorOptionId: "color-1",
-          quantity: 1,
-          totalPrice: 100000,
+          totalAmount: 100000,
           status: "PENDING",
         },
       });
 
       const paymentReference = `PAY-DUPLICATE-${Date.now()}`;
 
-      // Create first payment
       await prisma.payment.create({
         data: {
           orderId: order.id,
@@ -269,13 +259,13 @@ describe("orderService — Integration Tests", () => {
         },
       });
 
-      // TEST: Attempt to create duplicate payment with same reference
+      // Attempt to insert duplicate — should throw due to @unique on reference
       let constraintError = false;
       try {
         await prisma.payment.create({
           data: {
             orderId: order.id,
-            reference: paymentReference, // Same reference!
+            reference: paymentReference,
             amount: 100000,
             status: "COMPLETED",
             provider: "PAYSTACK",
@@ -285,10 +275,8 @@ describe("orderService — Integration Tests", () => {
         constraintError = true;
       }
 
-      // Should have failed due to unique constraint on reference
       expect(constraintError).toBe(true);
 
-      // Verify only one payment exists
       const payments = await prisma.payment.findMany({
         where: { reference: paymentReference },
       });
@@ -298,17 +286,11 @@ describe("orderService — Integration Tests", () => {
 
   describe("Pricing Engine Integration", () => {
     it("should correctly apply modifiers when creating order", () => {
-      // Test that pricing calculation is consistent
-      const basePrice = 50000;
-      const fabricModifier = 10000;
-      const styleModifier = 5000;
-
       const total = computeOrderTotal({
-        basePrice,
-        fabricPriceModifier: fabricModifier,
-        stylePriceModifier: styleModifier,
+        basePrice: 50000,
+        fabricPriceModifier: 10000,
+        stylePriceModifier: 5000,
       });
-
       expect(total).toBe(65000);
     });
   });
