@@ -1,0 +1,143 @@
+{
+  "routing": {
+    "description": "API routing using Express Router with thin route-handler-service pattern. Next.js App Router file-based routing for storefront. Vite query-param routing for admin.",
+    "required_patterns": {
+      "express-route-registration": "All Express routes are registered as Router instances in packages/api/src/routes/ and mounted in app.ts via app.use(prefix, router)",
+      "handler-delegation": "Routes delegate to handler functions in packages/api/src/handlers/. Handlers are thin wrappers that call service functions.",
+      "async-handler-wrapper": "All async Express route handlers must be wrapped with asyncHandler() from utils/asyncHandler.ts to forward errors to error middleware",
+      "nextjs-api-proxy": "Next.js API routes in apps/web/src/app/api/ act as proxies that forward requests to the Express API server"
+    },
+    "architectural_constraints": {
+      "route-prefix-convention": "Public API routes use /api/ prefix. Admin routes use /api/v1/admin/ prefix.",
+      "no-business-logic-in-routes": "Route files only compose middleware chains. Zero business logic allowed in route files.",
+      "nextjs-proxy-only": "apps/web API routes are BFF proxies only — they forward to packages/api and never contain direct DB access"
+    }
+  },
+  "auth": {
+    "description": "JWT-based authentication with role-based authorization (RBAC). Three roles: CUSTOMER, ADMIN, TAILOR.",
+    "required_patterns": {
+      "jwt-bearer-auth": "All authenticated routes use the authenticate middleware from packages/api/src/middleware/authenticate.ts. Token is extracted from Authorization: Bearer header.",
+      "role-based-authorization": "Protected routes use authorize(...allowedRoles) middleware after authenticate. Roles are: CUSTOMER, ADMIN, TAILOR.",
+      "auth-rate-limiting": "Auth endpoints (register, login) are rate-limited to 10 requests per 15 minutes per IP using express-rate-limit",
+      "password-hashing": "Passwords are hashed with bcryptjs (10 salt rounds). AuthService is a static class pattern.",
+      "schema-validation-on-auth": "Auth requests are validated using RegisterSchema and LoginSchema from @jhaz-imprints/shared"
+    },
+    "architectural_constraints": {
+      "token-structure": "JWT payload contains { id, email, role }. Tokens expire in 7 days.",
+      "middleware-order": "authenticate must precede authorize in middleware chain. authorize must never be used without authenticate.",
+      "admin-routes-require-admin-role": "All /api/v1/admin/* routes require ADMIN role via router.use(authenticate, authorize('ADMIN'))"
+    }
+  },
+  "data-layer": {
+    "description": "Dual-database architecture: PostgreSQL (Prisma) for transactional data and MongoDB (Mongoose) for flexible catalog data.",
+    "required_patterns": {
+      "prisma-transactional": "All financial operations (order creation + payment) use prisma.$transaction() for atomicity",
+      "prisma-singleton": "Prisma client is a singleton exported from packages/db/src/client.ts with global caching to prevent connection exhaustion in development",
+      "mongoose-models": "Mongoose models use typed schemas (Schema<IProduct>) with sub-schemas for nested objects. Models export from packages/catalog-db/src/models/",
+      "mongoose-paginate": "Product listing uses mongoose-paginate-v2 plugin. Results capped at 50 per page.",
+      "mongodb-connection": "MongoDB connects with exponential backoff retry (5 attempts). Connection pooling configured (maxPoolSize: 10, minPoolSize: 2).",
+      "lean-queries": "All read-only MongoDB queries use .lean() for plain JS objects and .select('-__v') to exclude version key"
+    },
+    "architectural_constraints": {
+      "transactional-in-postgres": "Money, identity, and order data must live in PostgreSQL. Never store financial data in MongoDB.",
+      "flexible-in-mongodb": "Product catalog, garment attributes, and image metadata belong in MongoDB for schema flexibility.",
+      "no-cross-db-transactions": "No atomic transactions spanning both databases. Order service coordinates manually (create in PG first, then initialize payment).",
+      "idempotency-via-unique-constraints": "Payment.reference has @unique constraint. Webhook handlers must check for existing completion before processing."
+    }
+  },
+  "validation": {
+    "description": "Zod-based runtime validation shared between API and clients via @jhaz-imprints/shared package.",
+    "required_patterns": {
+      "zod-schemas-in-shared": "All API request/response schemas are Zod objects defined in packages/shared/src/schemas/. Types are inferred with z.infer<>.",
+      "validateBody-middleware": "Express routes use validateBody(zodSchema) middleware to validate req.body. On failure, throws AppError with VALIDATION_ERROR code.",
+      "schema-reuse": "Both frontend (React Hook Form with zodResolver) and backend (validateBody middleware) import the same schemas from @jhaz-imprints/shared"
+    },
+    "architectural_constraints": {
+      "shared-schemas-are-source-of-truth": "Zod schemas in packages/shared must not drift from Prisma models. Changes to schema.prisma require corresponding schema updates.",
+      "no-inline-validation": "Request validation is never done inline in handlers. Always use validateBody middleware or zodResolver."
+    }
+  },
+  "error-handling": {
+    "description": "Centralized error handling with typed AppError class and Express error middleware.",
+    "required_patterns": {
+      "AppError-class": "Custom AppError extends Error with statusCode and optional code. Constructed as new AppError(message, statusCode, code?).",
+      "isAppError-guard": "Error middleware uses isAppError() type guard to distinguish operational errors from unexpected errors.",
+      "centralized-error-middleware": "All errors are caught by the final Express error middleware in app.ts. AppErrors return structured { error, code }, generic errors return 500.",
+      "asyncHandler-wrapper": "Async route handlers use asyncHandler() to automatically catch and forward Promise rejections to error middleware"
+    },
+    "architectural_constraints": {
+      "no-try-catch-in-handlers": "Handlers throw AppError; they do not catch and format errors themselves. The centralized middleware handles formatting.",
+      "exception-for-auth-handlers": "Auth handlers (register, login) use local try-catch with manual status codes. This is a legacy pattern."
+    }
+  },
+  "ui": {
+    "description": "Two separate frontend apps: Next.js 14 storefront (apps/web) with server components and Vite+React admin dashboard (apps/admin) with client-side only.",
+    "required_patterns": {
+      "tailwind-utility-classes": "All styling uses Tailwind CSS utility classes. Custom classes: card, input, btn-primary, btn-secondary, text-muted, text-error, bg-primary.",
+      "react-query-for-data": "Both apps use @tanstack/react-query for data fetching. QueryClient is created at app root. Queries use queryKey arrays and queryFn.",
+      "react-hook-form-with-zod": "Forms use useForm() with zodResolver(ZodSchema). useFieldArray for dynamic form sections.",
+      "localstorage-persistence": "Auth tokens stored as 'auth_token'. User roles stored as 'user_role'. Wizard drafts stored as 'measurement_wizard_draft'.",
+      "step-wizard-pattern": "Multi-step forms use numeric step state with const STEPS array. FormProvider wraps all steps."
+    },
+    "architectural_constraints": {
+      "admin-is-client-only": "apps/admin is a Vite SPA — no server-side rendering. All data comes from API calls.",
+      "web-uses-server-components": "apps/web defaults to server components. Client components must use 'use client' directive.",
+      "no-global-state": "No Redux, Zustand, or Context API for global state. React Query handles server state, localStorage handles persistence."
+    }
+  },
+  "notifications": {
+    "description": "Async notification pipeline using BullMQ job queue with Redis backing.",
+    "required_patterns": {
+      "queue-job-pattern": "Notification jobs are added via notificationQueue.add(jobName, jobData). Job names: 'order-confirmed', 'status-updated'.",
+      "worker-switch-dispatch": "The BullMQ Worker uses a switch statement on job.name to dispatch to handler functions.",
+      "non-fatal-sends": "Each email/notification send is wrapped in individual try-catch. One failure must never prevent other notifications from firing.",
+      "email-templates": "HTML email templates are generated by pure functions in packages/api/src/integrations/email/templates.ts. All use inline CSS for email client compatibility."
+    },
+    "architectural_constraints": {
+      "redis-required": "BullMQ requires Redis. Connection configured via REDIS_HOST and REDIS_PORT env vars.",
+      "retry-with-backoff": "Jobs retry 3 times with exponential backoff (2s base delay).",
+      "email-only-channel": "Current implementation supports email only via nodemailer (Gmail SMTP)."
+    }
+  },
+  "file-uploads": {
+    "description": "Image upload pipeline using Multer for parsing and Cloudinary for cloud storage.",
+    "required_patterns": {
+      "multer-memory-storage": "Files are parsed into memory buffers via multer.memoryStorage(). No disk storage.",
+      "cloudinary-stream-upload": "Upload uses cloudinary.v2.uploader.upload_stream() with the buffer piped to the stream.",
+      "upload-response-shape": "Successful uploads return { url, publicId, width, height }.",
+      "idempotent-delete": "Cloudinary delete treats 'not found' as success (idempotent). Uses destroy(publicId)."
+    },
+    "architectural_constraints": {
+      "admin-only": "Upload/delete routes require ADMIN role.",
+      "5mb-limit": "Max file size is 5 MB. Enforced by multer limits.",
+      "image-only": "Only image/* MIME types accepted. Validated in multer fileFilter.",
+      "webp-conversion": "All uploaded images are auto-converted to WebP format via Cloudinary format option.",
+      "folder-organization": "All product images stored in 'jhaz-imprints/products/' folder on Cloudinary.",
+      "three-env-vars": "Cloudinary requires CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET. Never use CLOUDINARY_URL."
+    }
+  },
+  "payments": {
+    "description": "Paystack payment integration for Nigerian Naira transactions.",
+    "required_patterns": {
+      "initialize-verify-flow": "Payment flow: Initialize (POST /transaction/initialize) → Customer pays on Paystack → Verify (GET /transaction/verify/{reference}).",
+      "kobo-conversion": "Amounts are stored in Naira but converted to kobo (* 100) for Paystack API calls. Reversed on verification (/ 100).",
+      "idempotent-webhook": "Webhook handler uses double-check locking: check outside transaction, re-check inside transaction. Prevents race conditions."
+    },
+    "architectural_constraints": {
+      "reference-uniqueness": "Payment.reference is globally unique (format: order_{orderId}_{timestamp}). Used as idempotency key.",
+      "paystack-secret-required": "PAYSTACK_SECRET_KEY env var is required. App crashes at module load if missing."
+    }
+  },
+  "testing": {
+    "description": "Unit testing with Vitest, comprehensive external service mocking.",
+    "required_patterns": {
+      "vitest-with-global-setup": "Tests run via vitest with setupFiles pointing to test-setup.ts. Global mocks for BullMQ, nodemailer, twilio, cloudinary.",
+      "mock-all-externals": "All external services (Redis, email, SMS, cloud storage) are mocked at module scope in test-setup.ts to prevent real network calls.",
+      "test-file-location": "Test files live alongside source in __tests__/ directories following *.test.ts pattern."
+    },
+    "architectural_constraints": {
+      "test-database-url": "Tests use TEST_DATABASE_URL env var, overriding DATABASE_URL. Tests must never hit production database.",
+      "no-integration-tests-for-mongo": "MongoDB operations are not covered by current test suite."
+    }
+  }
+}
