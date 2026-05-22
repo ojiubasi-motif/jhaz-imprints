@@ -27,8 +27,8 @@ export function middleware(request: NextRequest) {
   // Check if route is public
   const isPublicRoute = publicRoutes.includes(pathname);
 
-  // Get auth cookie
-  const authCookie = request.cookies.get('auth_token');
+  // Get auth cookie (backend sets it as 'jwt')
+  const authCookie = request.cookies.get('jwt');
   const hasAuth = !!authCookie;
 
   // If trying to access protected route without auth

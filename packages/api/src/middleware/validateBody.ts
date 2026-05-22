@@ -12,12 +12,13 @@ export function validateBody(schema: ZodSchema) {
     const validation = schema.safeParse(req.body);
 
     if (!validation.success) {
-      const errors = validation.error.flatten();
-      throw new AppError(
-        `Validation failed: ${JSON.stringify(errors)}`,
+      const error: any = new AppError(
+        "Validation failed",
         400,
         "VALIDATION_ERROR"
       );
+      error.errors = validation.error.flatten().fieldErrors;
+      return next(error);
     }
 
     req.body = validation.data;

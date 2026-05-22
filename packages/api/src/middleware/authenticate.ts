@@ -17,12 +17,20 @@ export interface AuthenticatedRequest extends Request {
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
+    let token: string | undefined;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Unauthorized" });
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.slice(7);
     }
 
-    const token = authHeader.slice(7); // Remove "Bearer " prefix
+    if (!token) {
+      return res.status(401).json({
+        msg: "Unauthorized: No token provided",
+        data: null,
+        type: "AUTHENTICATION_FAILED",
+        code: 602
+      });
+    }
     const secret = process.env.JWT_SECRET;
 
     if (!secret) {
@@ -43,6 +51,11 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
 
     next();
   } catch (error) {
-    return res.status(401).json({ error: "Unauthorized" });
+    return res.status(401).json({
+      msg: "Unauthorized: Invalid or expired token",
+      data: null,
+      type: "AUTHENTICATION_FAILED",
+      code: 602
+    });
   }
 }

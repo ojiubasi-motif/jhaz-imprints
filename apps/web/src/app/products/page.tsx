@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchProducts } from "@/store/slices/productsSlice";
 import { ProductGrid } from "@/components/products/ProductGrid";
 import { CategoryFilter } from "@/components/products/CategoryFilter";
+import type { RootState } from "@/store";
 
-export default function ProductsPage() {
+function ProductsContent() {
   const dispatch = useAppDispatch();
   const searchParams = useSearchParams();
   const category = searchParams.get("category") || "";
-  const { items, isLoading } = useAppSelector((state) => state.products);
+  const { items, isLoading } = useAppSelector((state: RootState) => state.products);
 
   useEffect(() => {
     dispatch(fetchProducts({ category }));
@@ -31,5 +32,13 @@ export default function ProductsPage() {
       <CategoryFilter />
       <ProductGrid products={items} isLoading={isLoading} />
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div>Loading collection...</div>}>
+      <ProductsContent />
+    </Suspense>
   );
 }

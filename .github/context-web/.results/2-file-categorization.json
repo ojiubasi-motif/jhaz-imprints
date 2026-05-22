@@ -1,0 +1,67 @@
+{
+  "next-pages": [
+    "src/app/products/page.tsx",
+    "src/app/products/[slug]/page.tsx",
+    "src/app/page.tsx",
+    "src/app/orders/[orderId]/page.tsx",
+    "src/app/orders/[orderId]/confirmation/page.tsx",
+    "src/app/orders/page.tsx",
+    "src/app/account/page.tsx",
+    "src/app/checkout/page.tsx",
+    "src/app/auth/register/page.tsx",
+    "src/app/auth/login/page.tsx"
+  ],
+  "next-layouts": [
+    "src/app/layout.tsx"
+  ],
+  "next-api-routes": [
+    "src/app/api/v1/products/[productId]/route.ts",
+    "src/app/api/v1/orders/route.ts"
+  ],
+  "react-components": [
+    "src/components/products/ProductGrid.tsx",
+    "src/components/products/CategoryFilter.tsx",
+    "src/components/products/ProductCard.tsx",
+    "src/components/Providers.tsx",
+    "src/components/orders/OrderCard.tsx",
+    "src/components/BodyDiagram.tsx",
+    "src/components/checkout/steps/ReviewPayStep.tsx",
+    "src/components/checkout/steps/FabricColourStep.tsx",
+    "src/components/checkout/steps/BodyMeasurementsStep.tsx",
+    "src/components/checkout/steps/StyleChoicesStep.tsx",
+    "src/components/checkout/MeasurementWizard.tsx",
+    "src/components/checkout/CheckoutErrorBoundary.tsx",
+    "src/components/layout/ConditionalLayout.tsx",
+    "src/components/layout/Footer.tsx",
+    "src/components/layout/Navbar.tsx",
+    "src/components/auth/LoginForm.tsx",
+    "src/components/auth/RegisterForm.tsx"
+  ],
+  "redux-slices": [
+    "src/store/slices/cartSlice.ts",
+    "src/store/slices/measurementsSlice.ts",
+    "src/store/slices/ordersSlice.ts",
+    "src/store/slices/productsSlice.ts",
+    "src/store/slices/authSlice.ts"
+  ],
+  "redux-store": [
+    "src/store/index.ts"
+  ],
+  "redux-hooks": [
+    "src/store/hooks.ts"
+  ],
+  "lib-utils": [
+    "src/lib/apiClient.ts",
+    "src/lib/tokenStore.ts"
+  ],
+  "global-styles": [
+    "src/globals.css"
+  ],
+  "config": [
+    "next.config.js",
+    "postcss.config.js",
+    "tailwind.config.ts",
+    "tsconfig.json",
+    "package.json"
+  ]
+}

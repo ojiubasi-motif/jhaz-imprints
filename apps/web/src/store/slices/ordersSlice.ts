@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { fetchApi } from '@/lib/api';
+import { fetchApi } from '@/lib/apiClient';
 import type { OrderCreate } from '@jhaz-imprints/shared';
 
 interface OrdersState {
@@ -65,6 +65,9 @@ const ordersSlice = createSlice({
   reducers: {
     clearCreateError: (state) => {
       state.createError = null;
+    },
+    clearError: (state) => {
+      state.error = null;
     }
   },
   extraReducers: (builder) => {
@@ -76,7 +79,7 @@ const ordersSlice = createSlice({
       })
       .addCase(fetchMyOrders.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.items = action.payload;
+        state.items = action.payload.items || [];
       })
       .addCase(fetchMyOrders.rejected, (state, action) => {
         state.isLoading = false;
@@ -102,10 +105,19 @@ const ordersSlice = createSlice({
       })
       .addCase(createOrder.fulfilled, (state, action) => {
         state.isCreating = false;
-        // Optionally add it to items
-        if (action.payload && action.payload.order) {
-          state.items.unshift(action.payload.order);
-          state.currentOrder = action.payload.order;
+        // The API returns { orderId, totalAmount, status, reference, paymentUrl, measurement }
+        if (action.payload && action.payload.orderId) {
+          // We don't have the full order object here, but we can store what we have
+          const newOrder = {
+            id: action.payload.orderId,
+            totalAmount: action.payload.totalAmount,
+            status: action.payload.status,
+            reference: action.payload.reference,
+            paymentUrl: action.payload.paymentUrl,
+            measurement: action.payload.measurement
+          };
+          state.items.unshift(newOrder);
+          state.currentOrder = newOrder;
         }
       })
       .addCase(createOrder.rejected, (state, action) => {
@@ -115,5 +127,5 @@ const ordersSlice = createSlice({
   },
 });
 
-export const { clearCreateError } = ordersSlice.actions;
+export const { clearCreateError, clearError } = ordersSlice.actions;
 export default ordersSlice.reducer;

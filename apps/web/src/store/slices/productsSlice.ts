@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { fetchApi } from '@/lib/api';
+import { fetchApi } from '@/lib/apiClient';
 import type { IProduct } from '@jhaz-imprints/catalog-db';
 
 interface ProductsState {
@@ -86,10 +86,11 @@ const productsSlice = createSlice({
       .addCase(fetchProductById.pending, (state) => {
         state.isLoading = true;
         state.error = null;
+        state.currentProduct = null; // Clear stale data immediately
       })
       .addCase(fetchProductById.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.currentProduct = action.payload;
+        state.currentProduct = action.payload as any;
       })
       .addCase(fetchProductById.rejected, (state, action) => {
         state.isLoading = false;

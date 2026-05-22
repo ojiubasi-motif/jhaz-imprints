@@ -2,9 +2,10 @@
     "name": "@jhaz-imprints/web",
     "version": "0.0.1",
     "private": true,
+    "type": "module",
     "description": "Next.js 14 storefront for Jhaz-imprints E-Commerce Platform",
     "scripts": {
-        "dev": "next dev -p 3001",
+        "dev": "next dev -p 3003",
         "build": "next build",
         "start": "next start",
         "lint": "next lint",

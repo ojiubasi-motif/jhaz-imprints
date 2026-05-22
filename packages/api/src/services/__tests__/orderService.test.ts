@@ -18,20 +18,60 @@ import { PrismaClient } from "@jhaz-imprints/db";
 vi.mock("@jhaz-imprints/catalog-db", () => ({
   connectMongoDB: vi.fn().mockResolvedValue(undefined),
   Product: {
-    findById: vi.fn().mockResolvedValue({
-      _id: "test-product-id",
-      name: "Traditional Wedding Aso-oke",
-      basePrice: 50000,
-      fabricOptions: [
-        { name: "Premium Aso-oke", priceModifier: 10000 },
-        { name: "Standard Aso-oke", priceModifier: 0 },
-      ],
-      styleOptions: [
-        { name: "Modern Elegant", priceModifier: 5000 },
-        { name: "Classic Cut", priceModifier: 0 },
-      ],
+    findById: vi.fn().mockReturnValue({
+      lean: vi.fn().mockReturnValue({
+        select: vi.fn().mockResolvedValue({
+          _id: "test-product-id",
+          name: "Traditional Wedding Aso-oke",
+          basePrice: 50000,
+          fabricOptions: [
+            { name: "Premium Aso-oke", priceModifier: 10000 },
+            { name: "Standard Aso-oke", priceModifier: 0 },
+          ],
+          styleOptions: [
+            { name: "Modern Elegant", priceModifier: 5000 },
+            { name: "Classic Cut", priceModifier: 0 },
+          ],
+        }),
+      }),
+    }),
+    findOne: vi.fn().mockReturnValue({
+      lean: vi.fn().mockReturnValue({
+        select: vi.fn().mockResolvedValue({
+          _id: "test-product-id",
+          name: "Traditional Wedding Aso-oke",
+          basePrice: 50000,
+          fabricOptions: [
+            { name: "Premium Aso-oke", priceModifier: 10000 },
+            { name: "Standard Aso-oke", priceModifier: 0 },
+          ],
+          styleOptions: [
+            { name: "Modern Elegant", priceModifier: 5000 },
+            { name: "Classic Cut", priceModifier: 0 },
+          ],
+        }),
+      }),
+    }),
+    find: vi.fn().mockReturnValue({
+      lean: vi.fn().mockReturnValue({
+        select: vi.fn().mockResolvedValue([]),
+      }),
     }),
   },
+}));
+
+vi.mock("../paystackService", () => ({
+  initializePayment: vi.fn().mockResolvedValue({
+    authorizationUrl: "https://mock-payment-url.com",
+    accessCode: "mock-access-code",
+    reference: "mock-ref",
+  }),
+  verifyPayment: vi.fn().mockResolvedValue({
+    status: "success",
+    amount: 50000,
+    reference: "mock-ref",
+    metadata: { orderId: "test-order-id" },
+  }),
 }));
 
 // Import after mocks are set up
@@ -79,6 +119,7 @@ describe("orderService — Integration Tests", () => {
           lastName: "User",
           phone: "+1234567890",
           role: "CUSTOMER",
+          password: "hashed_password",
         },
       });
 
@@ -101,6 +142,9 @@ describe("orderService — Integration Tests", () => {
         data: {
           userId: user.id,
           measurementId: measurement.id,
+          productId: "test-product-id",
+          styleOptionName: "Modern Elegant",
+          fabricOptionName: "Premium Aso-oke",
           totalAmount: 50000,
           status: "PENDING",
         },
@@ -156,6 +200,7 @@ describe("orderService — Integration Tests", () => {
           lastName: "User2",
           phone: "+1234567891",
           role: "CUSTOMER",
+          password: "hashed_password",
         },
       });
 
@@ -175,7 +220,10 @@ describe("orderService — Integration Tests", () => {
         data: {
           userId: user.id,
           measurementId: measurement.id,
-          totalAmount: 75000,
+          productId: "test-product-id",
+          styleOptionName: "Modern Elegant",
+          fabricOptionName: "Standard Aso-oke",
+          totalAmount: 50000,
           status: "PENDING",
         },
       });
@@ -185,7 +233,7 @@ describe("orderService — Integration Tests", () => {
         data: {
           orderId: order.id,
           reference: paymentReference,
-          amount: 75000,
+          amount: 50000,
           status: "PENDING",
           provider: "PAYSTACK",
         },
@@ -223,6 +271,7 @@ describe("orderService — Integration Tests", () => {
           lastName: "User3",
           phone: "+1234567892",
           role: "CUSTOMER",
+          password: "hashed_password",
         },
       });
 
@@ -242,7 +291,10 @@ describe("orderService — Integration Tests", () => {
         data: {
           userId: user.id,
           measurementId: measurement.id,
-          totalAmount: 100000,
+          productId: "test-product-id",
+          styleOptionName: "Classic Cut",
+          fabricOptionName: "Standard Aso-oke",
+          totalAmount: 50000,
           status: "PENDING",
         },
       });
@@ -253,7 +305,7 @@ describe("orderService — Integration Tests", () => {
         data: {
           orderId: order.id,
           reference: paymentReference,
-          amount: 100000,
+          amount: 50000,
           status: "COMPLETED",
           provider: "PAYSTACK",
         },
@@ -266,7 +318,7 @@ describe("orderService — Integration Tests", () => {
           data: {
             orderId: order.id,
             reference: paymentReference,
-            amount: 100000,
+            amount: 50000,
             status: "COMPLETED",
             provider: "PAYSTACK",
           },

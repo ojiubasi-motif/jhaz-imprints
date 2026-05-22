@@ -184,20 +184,27 @@ export function startNotificationWorker() {
 }
 
 // --- Email Helper ---
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD,
+  },
+});
 
 async function sendEmail(to: string, subject: string, html: string) {
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD,
-    },
-  });
-
-  return transporter.sendMail({
-    from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
-    to,
-    subject,
-    html,
-  });
+  console.log(`[Worker] Sending email to ${to} with subject: ${subject}`);
+  try {
+    const result = await transporter.sendMail({
+      from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
+      to,
+      subject,
+      html,
+    });
+    console.log(`[Worker] ✓ Email delivered to ${to} (MessageId: ${result.messageId})`);
+    return result;
+  } catch (error) {
+    console.error(`[Worker] ✗ Failed to send email to ${to}:`, error);
+    throw error; // Re-throw to be caught by the job handler
+  }
 }

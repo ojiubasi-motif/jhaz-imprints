@@ -10,6 +10,8 @@
  *    - Confirms payment status and details
  */
 
+import crypto from "crypto";
+
 interface InitializePaymentResponse {
   status: boolean;
   message: string;
@@ -182,4 +184,21 @@ export async function fetchTransaction(reference: string): Promise<any> {
     console.error("Error fetching transaction:", error);
     throw error;
   }
+}
+/**
+ * Verify Paystack webhook signature
+ * 
+ * @param payload - Raw request body
+ * @param signature - Signature from x-paystack-signature header
+ * @returns boolean - Whether the signature is valid
+ */
+export function verifyWebhookSignature(payload: any, signature: string): boolean {
+  if (!PAYSTACK_SECRET_KEY) return false;
+  
+  const hash = crypto
+    .createHmac("sha512", PAYSTACK_SECRET_KEY)
+    .update(typeof payload === "string" ? payload : JSON.stringify(payload))
+    .digest("hex");
+    
+  return hash === signature;
 }

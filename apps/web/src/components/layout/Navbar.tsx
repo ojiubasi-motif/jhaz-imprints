@@ -3,20 +3,20 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
-import { logout } from "@/store/slices/authSlice";
+import { logoutUser } from "@/store/slices/authSlice";
 
 export function Navbar() {
-  const { user } = useAppSelector((state) => state.auth);
+  const { user, isLoading } = useAppSelector((state) => state.auth);
   const dispatch = useAppDispatch();
 
   return (
-    <header className="bg-white shadow">
+    <header className="sticky top-0 z-50 bg-white shadow">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           <div className="flex items-center gap-8">
             <Link href="/" className="flex items-center">
               <Image
-                src="/logo/jhazImprntLogo.jpeg"
+                src="/logo/jhazImprntLogo.png"
                 alt="Jhaz-imprints"
                 width={160}
                 height={40}
@@ -31,13 +31,18 @@ export function Navbar() {
             </nav>
           </div>
           <div className="flex items-center space-x-4">
-            {user ? (
+            {isLoading ? (
+              <div className="animate-pulse flex space-x-4">
+                <div className="h-8 w-16 bg-gray-200 rounded"></div>
+                <div className="h-8 w-24 bg-gray-200 rounded"></div>
+              </div>
+            ) : user ? (
               <>
                 <Link href="/orders" className="text-sm font-medium text-gray-700 hover:text-primary">
                   My Orders
                 </Link>
                 <button
-                  onClick={() => dispatch(logout())}
+                  onClick={() => dispatch(logoutUser())}
                   className="text-sm font-medium text-gray-700 hover:text-error"
                 >
                   Logout

@@ -41,6 +41,7 @@ model User {
   lastName  String?
   password  String
   role      Role     @default(CUSTOMER)
+  refreshToken String?
   
   measurements    Measurement[]
   orders          Order[]
@@ -86,10 +87,20 @@ model Order {
   measurementId       String
   measurement         Measurement @relation(fields: [measurementId], references: [id])
   
+  // Product details (snapshot from MongoDB)
+  productId           String   // MongoDB ObjectId or Slug
+  styleOptionName     String
+  fabricOptionName    String
+  colorName           String?
+  
+  // Price snapshots (for history)
+  basePrice           Float    @default(0)
+  styleModifier       Float    @default(0)
+  fabricModifier      Float    @default(0)
   // Order metadata
   status              OrderStatus @default(PENDING)
   totalAmount         Float
-  currency            String      @default("NGN")
+  currency            String   @default("NGN")
   
   // Optional order notes (garment details, special requests)
   notes               String?

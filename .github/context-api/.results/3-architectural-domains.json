@@ -1,0 +1,78 @@
+{
+  "api-routing": {
+    "required_patterns": {
+      "express-router": "Use express.Router() to modularize endpoints.",
+      "prefix-v1": "New endpoints should follow the /api/v1 prefix where appropriate."
+    },
+    "architectural_constraints": {
+      "middleware-order": "Authentication middleware must precede authorization middleware."
+    }
+  },
+  "api-handlers": {
+    "required_patterns": {
+      "quizio-envelope": "All responses must return { msg, data, type, code }.",
+      "status-codes": "200 for success, 201 for creation, 400/401/403/404/500 for errors."
+    },
+    "architectural_constraints": {
+      "thin-handlers": "Handlers should only handle req/res and delegate logic to services.",
+      "response-sanitization": "Always sanitize output by removing internal fields (password, createdAt, updatedAt, refreshToken)."
+    }
+  },
+  "api-services": {
+    "required_patterns": {
+      "singleton-class": "Services should be implemented as static classes or exported functions.",
+      "error-throwing": "Services should throw meaningful AppError (with message, status, and code) that handlers can catch.",
+      "strict-string-matching": "Always use .trim().toLowerCase() when comparing input options (fabric, style) with database values.",
+      "lean-queries": "Use .lean() for all Mongoose read operations to ensure plain objects and better performance."
+    },
+    "architectural_constraints": {
+      "domain-isolation": "Services should focus on a single domain (e.g., AuthService, ProductService).",
+      "dual-database-orchestration": "When fetching related context from Mongoose (catalog), perform strict data extraction and pass into a single Prisma $transaction block for cross-system atomicity.",
+      "resilient-fallback": "Implement 'Standard' or 'Original' fallbacks for product options to prevent breaking orders when catalog configurations are missing modifiers."
+    }
+  },
+  "api-payments": {
+    "required_patterns": {
+      "idempotency": "Webhook handlers MUST enforce idempotency by using a unique reference ID.",
+      "transaction-recheck": "Always re-query payment status inside a transaction before updating to prevent race conditions.",
+      "payment-intent": "Expose a dedicated POST /:orderId/payment-intent endpoint that initializes a Paystack transaction and returns the accessCode for the frontend PaystackPop modal.",
+      "user-verify": "Expose POST /verify/:reference for frontend-initiated verification after redirect/callback."
+    },
+    "architectural_constraints": {
+      "transaction-isolation": "Verify external provider (Paystack) statuses independently before modifying the local order and payment database statuses.",
+      "webhook-signature": "Always verify the x-paystack-signature header using the Paystack secret before processing webhook payloads. Reject unsigned webhooks with 401.",
+      "status-guard": "Never create a payment intent for an order that is not in PENDING status."
+    }
+  },
+  "data-persistence": {
+    "required_patterns": {
+      "prisma": "Use Prisma for user, auth, and relational data.",
+      "mongoose": "Use Mongoose for product catalog and document-based data.",
+      "order-snapshotting": "Save snapshots of product options and price modifiers in the relational Order model.",
+      "pagination": "Use mongoose-paginate-v2 for all paginated catalog queries."
+    },
+    "architectural_constraints": {
+      "external-packages": "Database logic must be imported from @jhaz-imprints/db or @jhaz-imprints/catalog-db."
+    }
+  },
+  "background-processing": {
+    "required_patterns": {
+      "bullmq": "Use BullMQ for asynchronous jobs like notifications.",
+      "dual-email": "For 'order-confirmed' jobs, ALWAYS send two emails: one to the customer (confirmation) and one to the admin/tailor (production alert with full measurements). Each email send is independently wrapped in try/catch — failure of one must not block the other.",
+      "safe-defaults": "All job data fields must have safe defaults (e.g., `productName || 'Custom Outfit'`, `totalPrice ?? 0`) to prevent crashes on partial data.",
+      "retry-policy": "Configure queues with exponential backoff: { attempts: 3, backoff: { type: 'exponential', delay: 2000 } }."
+    },
+    "architectural_constraints": {
+      "worker-isolation": "Workers should be defined in src/queues/ and started in app.ts.",
+      "non-blocking": "Notification failures (emails, SMS) must never cause the main request to fail. Always enqueue and catch queue errors separately."
+    }
+  },
+  "shared-validation": {
+    "required_patterns": {
+      "zod": "Use Zod schemas from @jhaz-imprints/shared for all request validation."
+    },
+    "architectural_constraints": {
+      "strict-parsing": "Use schema.parse(req.body) to ensure type safety."
+    }
+  }
+}

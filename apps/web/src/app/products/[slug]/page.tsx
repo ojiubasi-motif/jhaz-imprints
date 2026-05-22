@@ -5,12 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchProductById, clearCurrentProduct } from "@/store/slices/productsSlice";
 import Link from "next/link";
+import type { RootState } from "@/store";
 
 export default function ProductDetailPage() {
   const { slug } = useParams();
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { currentProduct: product, isLoading, error } = useAppSelector((state) => state.products);
+  const { currentProduct: product, isLoading, error } = useAppSelector((state: RootState) => state.products);
 
   useEffect(() => {
     if (typeof slug === "string") {

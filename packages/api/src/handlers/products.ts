@@ -26,7 +26,12 @@ export async function listProductsHandler(req: Request, res: Response) {
     limit: limit ? parseInt(limit as string, 10) : 12,
   });
 
-  res.json(result);
+  res.json({
+    msg: "products list",
+    data: result,
+    type: "SUCCESS",
+    code: 600
+  });
 }
 
 /**
@@ -40,5 +45,10 @@ export async function listProductsHandler(req: Request, res: Response) {
 export async function getProductHandler(req: Request, res: Response) {
   const { idOrSlug } = req.params;
   const product = await productService.getProductByIdOrSlug(idOrSlug);
-  res.json(product);
+  res.json({
+    msg: "product details",
+    data: product,
+    type: "SUCCESS",
+    code: 600
+  });
 }

@@ -40,21 +40,38 @@ router.post(
 
       if (err) {
         if (err.code === "LIMIT_FILE_SIZE") {
-          return res.status(400).json({ error: "File too large. Max 5 MB." });
+          return res.status(400).json({
+            msg: "File too large. Max 5 MB.",
+            type: "FAILED",
+            code: 602
+          });
         }
         if (err instanceof multer.MulterError) {
-          return res.status(400).json({ error: `Upload error: ${err.message}` });
+          return res.status(400).json({
+            msg: `Upload error: ${err.message}`,
+            type: "FAILED",
+            code: 602
+          });
         }
         return next(err);
       }
 
       if (!file) {
-        return res.status(400).json({ error: "No file provided. Send an image as form-data with any key name." });
+        return res.status(400).json({
+          msg: "No file provided. Send an image as form-data with any key name.",
+          type: "FAILED",
+          code: 602
+        });
       }
 
       uploadService
         .uploadToCloudinary(file)
-        .then((result) => res.status(201).json(result))
+        .then((result) => res.status(201).json({
+          msg: "upload success",
+          data: result,
+          type: "SUCCESS",
+          code: 600
+        }))
         .catch(next);
     });
   }
@@ -77,7 +94,12 @@ router.delete(
       }
 
       await uploadService.deleteFromCloudinary(publicId);
-      res.json({ success: true });
+      res.json({
+        msg: "delete success",
+        data: { success: true },
+        type: "SUCCESS",
+        code: 600
+      });
     } catch (error) {
       next(error);
     }

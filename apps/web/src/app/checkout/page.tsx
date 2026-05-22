@@ -5,25 +5,30 @@ import { useEffect, Suspense } from "react";
 import MeasurementWizard from "@/components/checkout/MeasurementWizard";
 import { CheckoutErrorBoundary } from "@/components/checkout/CheckoutErrorBoundary";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
-import { fetchProductById } from "@/store/slices/productsSlice";
+import { fetchProductById, clearCurrentProduct } from "@/store/slices/productsSlice";
+import type { RootState } from "@/store";
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const productId = searchParams.get("productId");
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { user, token } = useAppSelector((state) => state.auth);
+  const { user, isLoading } = useAppSelector((state: RootState) => state.auth);
 
   useEffect(() => {
-    if (!token) {
+    // Only redirect if we've finished loading AND still have no user
+    if (!isLoading && !user) {
       router.push("/auth/login?redirect=/checkout");
     }
-  }, [token, router]);
+  }, [user, isLoading, router]);
 
   useEffect(() => {
     if (productId) {
       dispatch(fetchProductById(productId));
     }
+    return () => {
+      dispatch(clearCurrentProduct());
+    };
   }, [dispatch, productId]);
 
   if (!productId) {
@@ -37,10 +42,13 @@ function CheckoutContent() {
     );
   }
 
-  if (!user) {
+  if (isLoading || !user) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-16 text-center">
-        <p>Redirecting to login...</p>
+        <p className="text-muted">Loading your session...</p>
+        <div className="mt-4 inline-block">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
       </div>
     );
   }

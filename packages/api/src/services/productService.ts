@@ -49,7 +49,7 @@ export async function listProducts(query: ListProductsQuery) {
     filter.category = category;
   }
 
-  if (search) {
+  if (search && typeof search === "string") {
     // Case-insensitive partial match on product name
     filter.name = { $regex: search.trim(), $options: "i" };
   }

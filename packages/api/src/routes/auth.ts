@@ -1,6 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { registerHandler, loginHandler, meHandler } from "../handlers/auth";
+import { registerHandler, loginHandler, meHandler, logoutHandler, refreshHandler } from "../handlers/auth";
 import { authenticate } from "../middleware/authenticate";
 
 const router = Router();
@@ -15,6 +15,8 @@ const authLimiter = rateLimit({
 // Apply rate limiter to register and login
 router.post("/register", authLimiter, registerHandler);
 router.post("/login", authLimiter, loginHandler);
+router.post("/logout", logoutHandler);
+router.get("/refresh", refreshHandler);
 
 // Protected route to get current user details
 router.get("/me", authenticate, meHandler);

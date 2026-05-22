@@ -22,8 +22,8 @@ export default function OrderStatusPage() {
   const status = searchParams.get("status");
   const actionParam = searchParams.get("action");
 
-  const { currentOrder, isLoading } = useAppSelector((state) => state.orders);
-  const { user } = useAppSelector((state) => state.auth);
+  const { currentOrder, isLoading, error } = useAppSelector((state: RootState) => state.orders);
+  const { user, isLoading: authLoading } = useAppSelector((state: RootState) => state.auth);
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
@@ -40,12 +40,20 @@ export default function OrderStatusPage() {
     }
   }, [actionParam]);
 
+  if (authLoading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-16 text-center">
+        <p className="text-muted animate-pulse">Authenticating...</p>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="rounded-lg bg-amber-50 p-6 text-center">
           <p className="text-amber-800 mb-4">You must be logged in to view orders.</p>
-          <Link href="/auth/login" className="btn-primary px-6 py-2">
+          <Link href={`/auth/login?redirect=/orders/${orderId}`} className="btn-primary px-6 py-2">
             Sign In
           </Link>
         </div>
@@ -77,6 +85,7 @@ export default function OrderStatusPage() {
   const getStatusColor = (orderStatus: string) => {
     const colors: Record<string, string> = {
       CONFIRMED: "bg-green-50 text-green-800 border-green-200",
+      PENDING: "bg-yellow-50 text-yellow-800 border-yellow-200",
       PENDING_PAYMENT: "bg-yellow-50 text-yellow-800 border-yellow-200",
       PROCESSING: "bg-blue-50 text-blue-800 border-blue-200",
       SHIPPED: "bg-purple-50 text-purple-800 border-purple-200",
@@ -89,6 +98,7 @@ export default function OrderStatusPage() {
   const getStatusBadge = (orderStatus: string) => {
     const badges: Record<string, string> = {
       CONFIRMED: "✅ Confirmed",
+      PENDING: "⏳ Awaiting Payment",
       PENDING_PAYMENT: "⏳ Awaiting Payment",
       PROCESSING: "🔄 Processing",
       SHIPPED: "📦 Shipped",
@@ -104,8 +114,9 @@ export default function OrderStatusPage() {
 
       {/* Status Banner */}
       {status && (
-        <div className="mb-6 rounded-lg bg-green-50 border border-green-200 p-4 text-green-800">
-          {status === "payment-success" && "✅ Payment successful! Your order is confirmed."}
+        <div className="mb-6 rounded-lg bg-green-50 border border-green-200 p-4 text-green-800 font-medium">
+          {(status === "payment-success" || status === "success") && "✅ Payment successful! Your order is confirmed."}
+          {status === "verifying" && "🔄 Payment received! We are just verifying the details. Please wait a moment."}
           {status === "offline-pending" && "💾 Order saved. Complete payment when you reconnect to the internet."}
           {status === "payment-pending" && "⏳ Initializing payment..."}
         </div>
@@ -187,7 +198,7 @@ export default function OrderStatusPage() {
 
                 <div className="flex justify-between border-t pt-2 font-semibold">
                   <span>Total</span>
-                  <span className="text-secondary">₦{currentOrder.totalPrice?.toLocaleString() || 0}</span>
+                  <span className="text-secondary">₦{currentOrder.totalAmount?.toLocaleString() || 0}</span>
                 </div>
               </div>
             </div>
@@ -196,7 +207,7 @@ export default function OrderStatusPage() {
             <div>
               <p className="text-sm text-muted">Order Date</p>
               <p className="font-semibold">
-                {new Date(currentOrder.createdAt).toLocaleDateString("en-US", {
+                {new Date(currentOrder.createdAt || Date.now()).toLocaleDateString("en-US", {
                   year: "numeric",
                   month: "long",
                   day: "numeric",

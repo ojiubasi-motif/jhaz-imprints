@@ -6,7 +6,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, FormProvider, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { OrderCreateSchema, type OrderCreate } from "@jhaz-imprints/shared";
 import BodyMeasurementsStep from "./steps/BodyMeasurementsStep";
@@ -35,14 +35,32 @@ export default function MeasurementWizard({ productId, onSuccess }: MeasurementW
 
   const methods = useForm<OrderCreate>({
     resolver: zodResolver(OrderCreateSchema),
-    mode: "onBlur",
+    mode: "onChange",
     defaultValues: {
       measurementId: "",
-      productId,
       notes: "",
-      ...draft,
+      ...(draft?.productId === productId ? draft : {}),
+      productId,
+      // Force fresh selection by overriding stale "Standard" defaults from previous sessions
+      styleOptionName: (draft?.productId === productId && draft.styleOptionName !== "Standard") ? draft.styleOptionName : "",
+      fabricOptionName: (draft?.productId === productId && draft.fabricOptionName !== "Standard") ? draft.fabricOptionName : "",
+      colorName: (draft?.productId === productId && draft.colorName !== "Original") ? draft.colorName : "",
     },
   });
+
+  const { control } = methods;
+  const watchedMeasurementId = useWatch({ control, name: "measurementId" });
+  const watchedStyle = useWatch({ control, name: "styleOptionName" });
+  const watchedFabric = useWatch({ control, name: "fabricOptionName" });
+  const watchedColor = useWatch({ control, name: "colorName" });
+
+  const { currentProduct, isLoading: productLoading } = useAppSelector((state) => state.products);
+  
+  // NOTE: All automatic fallbacks for style, fabric, and color have been removed.
+  // We handle "no options" cases in the step UI by showing a message, 
+  // but the user still needs a value to pass validation.
+  // For products with NO options, we now set the "Standard" value ONLY when the step is mounted 
+  // AND no choice exists, to satisfy validation without auto-selecting for configurable products.
 
   // Save draft to Redux on form change
   useEffect(() => {
@@ -54,9 +72,19 @@ export default function MeasurementWizard({ productId, onSuccess }: MeasurementW
   }, [methods, dispatch]);
 
   const handleNext = async () => {
-    // Validate current step before proceeding
-    // This is a simplified check — ideally each step defines its own fields
-    if (currentStep < STEPS.length - 1) {
+    let isValid = true;
+
+    if (currentStep === 0) {
+      isValid = await methods.trigger("measurementId");
+    } else if (currentStep === 1) {
+      isValid = await methods.trigger("styleOptionName");
+    } else if (currentStep === 2) {
+      const fabricValid = await methods.trigger("fabricOptionName");
+      const colorValid = await methods.trigger("colorName");
+      isValid = fabricValid && colorValid;
+    }
+
+    if (isValid && currentStep < STEPS.length - 1) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -67,8 +95,23 @@ export default function MeasurementWizard({ productId, onSuccess }: MeasurementW
     }
   };
 
-  const handleSuccess = (orderId: string) => {
-    onSuccess?.(orderId);
+  const isNextDisabled = () => {
+    if (currentStep === 0) return !watchedMeasurementId;
+    if (currentStep === 1) {
+      // If no style options exist, we allow proceeding (value will be set in step component)
+      const hasStyleOptions = currentProduct?.styleOptions && currentProduct.styleOptions.length > 0;
+      return hasStyleOptions ? !watchedStyle : false;
+    }
+    if (currentStep === 2) {
+      const hasFabricOptions = currentProduct?.fabricOptions && currentProduct.fabricOptions.length > 0;
+      const hasColorOptions = currentProduct?.colorOptions && currentProduct.colorOptions.length > 0;
+      
+      let fabricMissing = hasFabricOptions ? !watchedFabric : false;
+      let colorMissing = hasColorOptions ? !watchedColor : false;
+      
+      return fabricMissing || colorMissing;
+    }
+    return false;
   };
 
   return (
@@ -122,7 +165,8 @@ export default function MeasurementWizard({ productId, onSuccess }: MeasurementW
               <button
                 type="button"
                 onClick={handleNext}
-                className="btn-primary px-6 py-2"
+                disabled={isNextDisabled()}
+                className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed px-6 py-2 transition-all"
               >
                 Next →
               </button>

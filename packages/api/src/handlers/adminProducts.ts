@@ -14,7 +14,12 @@ import { AppError } from "../errors/AppError";
  */
 export async function createProductHandler(req: AuthenticatedRequest, res: Response) {
   const product = await adminProductService.createProduct(req.body);
-  res.status(201).json(product);
+  res.status(201).json({
+    msg: "product created",
+    data: product,
+    type: "SUCCESS",
+    code: 600
+  });
 }
 
 /**
@@ -27,7 +32,12 @@ export async function updateProductHandler(req: AuthenticatedRequest, res: Respo
     throw new AppError("Invalid product ID", 400);
   }
   const product = await adminProductService.updateProduct(id, req.body);
-  res.json(product);
+  res.json({
+    msg: "product updated",
+    data: product,
+    type: "SUCCESS",
+    code: 600
+  });
 }
 
 /**

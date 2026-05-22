@@ -9,9 +9,17 @@ import { z } from "zod";
 export const OrderCreateSchema = z.object({
   measurementId: z.string().cuid("Invalid measurement ID"),
   productId: z.string().min(1, "Product ID is required"),
-  fabricOptionName: z.string().min(1, "Fabric option is required"),
-  styleOptionName: z.string().min(1, "Style option is required"),
+  fabricOptionName: z.string().min(1, "Fabric selection is required"),
+  styleOptionName: z.string().min(1, "Style selection is required"),
+  colorName: z.string().optional(),
   notes: z.string().max(1000, "Notes cannot exceed 1000 characters").optional(),
+  // Bespoke measurements (optional if measurementId is provided, but allowed inline)
+  chest: z.number().optional(),
+  waist: z.number().optional(),
+  hip: z.number().optional(),
+  shoulder: z.number().optional(),
+  armLength: z.number().optional(),
+  length: z.number().optional(),
 });
 
 export type OrderCreate = z.infer<typeof OrderCreateSchema>;

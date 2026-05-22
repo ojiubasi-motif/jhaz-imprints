@@ -2,29 +2,60 @@
 
 import { useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { fetchMyOrders } from "@/store/slices/ordersSlice";
+import { fetchMyOrders, clearError } from "@/store/slices/ordersSlice";
 import { OrderCard } from "@/components/orders/OrderCard";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { RootState } from "@/store";
 
 export default function OrdersPage() {
   const dispatch = useAppDispatch();
   const router = useRouter();
-  const { items, isLoading, error } = useAppSelector((state) => state.orders);
-  const { user, token } = useAppSelector((state) => state.auth);
+  const searchParams = useSearchParams();
+  const status = searchParams.get("status");
+  const orderId = searchParams.get("orderId");
+  const { items, isLoading, error } = useAppSelector((state: RootState) => state.orders);
+  const { user, isLoading: authLoading } = useAppSelector((state: RootState) => state.auth);
 
   useEffect(() => {
-    if (!token) {
+    if (authLoading) return;
+    if (!user) {
       router.push("/auth/login?redirect=/orders");
       return;
     }
+    dispatch(clearError());
     dispatch(fetchMyOrders());
-  }, [dispatch, token, router]);
+  }, [dispatch, user, router, authLoading]);
+
+  if (authLoading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8 animate-pulse bg-gray-100 h-10 w-48 rounded" />
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="card h-40 animate-pulse bg-gray-100" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (!user) return null; // Redirecting
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">My Orders</h1>
+
+      {status === "success" && (
+        <div role="alert" className="rounded-lg bg-green-50 p-4 text-sm text-green-700 mb-6 border border-green-200">
+          🎉 Payment successful! Your order <strong>#{orderId?.slice(-6).toUpperCase()}</strong> has been placed.
+        </div>
+      )}
+
+      {status === "verifying" && (
+        <div role="alert" className="rounded-lg bg-blue-50 p-4 text-sm text-blue-700 mb-6 border border-blue-200">
+          ⌛ We're verifying your payment. Your order status will update shortly.
+        </div>
+      )}
 
       {error && (
         <div role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-700 mb-6">

@@ -11,6 +11,11 @@ import { OrderCreateSchema, MeasurementCreateSchema } from "@jhaz-imprints/share
 import * as orderHandlers from "../handlers/orders";
 
 const router = Router();
+
+router.get("/test-update", (req, res) => {
+  res.json({ msg: "Server is updated!" });
+});
+
 /**
  * POST /api/orders
  * Create a new order.
@@ -50,6 +55,30 @@ router.post(
 );
 
 /**
+ * GET /api/orders/measurements
+ * Get all measurement profiles for the authenticated user.
+ */
+router.get(
+  "/measurements",
+  authenticate,
+  asyncHandler((req: AuthenticatedRequest, res) =>
+    orderHandlers.getUserMeasurementsHandler(req, res)
+  )
+);
+
+/**
+ * GET /api/orders/my-orders
+ * Get all orders for the authenticated user (paginated).
+ */
+router.get(
+  "/my-orders",
+  authenticate,
+  asyncHandler((req: AuthenticatedRequest, res) =>
+    orderHandlers.getUserOrdersHandler(req, res)
+  )
+);
+
+/**
  * GET /api/orders/:orderId
  * Get order details.
  */
@@ -63,13 +92,25 @@ router.get(
 
 /**
  * GET /api/orders
- * Get all orders for the authenticated user (paginated).
+ * Admin view (optional, currently same as my-orders)
  */
 router.get(
   "/",
   authenticate,
   asyncHandler((req: AuthenticatedRequest, res) =>
     orderHandlers.getUserOrdersHandler(req, res)
+  )
+);
+
+/**
+ * POST /api/orders/verify/:reference
+ * Verify payment status after frontend redirect/callback.
+ */
+router.post(
+  "/verify/:reference",
+  authenticate,
+  asyncHandler((req: AuthenticatedRequest, res) =>
+    orderHandlers.verifyPaymentHandler(req, res)
   )
 );
 

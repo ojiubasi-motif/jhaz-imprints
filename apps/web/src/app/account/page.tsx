@@ -7,7 +7,7 @@
 
 import { useRouter } from "next/navigation";
 import { useAppSelector, useAppDispatch } from "@/store/hooks";
-import { logout } from "@/store/slices/authSlice";
+import { logoutUser } from "@/store/slices/authSlice";
 import Link from "next/link";
 
 export default function AccountProfilePage() {
@@ -93,7 +93,7 @@ export default function AccountProfilePage() {
 
         <button
           onClick={() => {
-            dispatch(logout());
+            dispatch(logoutUser());
             router.push("/");
           }}
           className="text-red-600 hover:text-red-800 font-semibold"

@@ -6,7 +6,6 @@ import jwt from "jsonwebtoken";
 export class AuthService {
   /**
    * Registers a new user.
-   * Hashes password and generates a JWT.
    */
   static async register(data: RegisterData) {
     // Check if user already exists
@@ -29,28 +28,33 @@ export class AuthService {
         password: hashedPassword,
         firstName: data.firstName,
         lastName: data.lastName,
-        // Role defaults to CUSTOMER
       },
     });
 
-    // Generate JWT
-    const token = this.generateToken(user);
+    // Generate tokens (Quizio pattern: access_token 1d, refresh_token 30m)
+    const access_token = this.generateAccessToken(user);
+    const refresh_token = this.generateRefreshToken(user);
 
-    // Remove password from returned user object
-    const { password: _, ...userWithoutPassword } = user;
+    // Save refresh token to DB
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: refresh_token },
+    });
+
+    // Remove password and refreshToken from returned user object
+    const { password: _, refreshToken: __, ...userData } = user as any;
 
     return {
-      user: userWithoutPassword,
-      token,
+      user: userData,
+      access_token,
+      refresh_token,
     };
   }
 
   /**
    * Logs in a user.
-   * Verifies password and generates a JWT.
    */
   static async login(data: LoginData) {
-    // Find user by email
     const user = await prisma.user.findUnique({
       where: { email: data.email },
     });
@@ -59,44 +63,103 @@ export class AuthService {
       throw new Error("Invalid email or password");
     }
 
-    // Compare passwords
     const isPasswordValid = await bcrypt.compare(data.password, user.password);
-
     if (!isPasswordValid) {
       throw new Error("Invalid email or password");
     }
 
-    // Generate JWT
-    const token = this.generateToken(user);
+    const access_token = this.generateAccessToken(user);
+    const refresh_token = this.generateRefreshToken(user);
 
-    // Remove password from returned user object
-    const { password: _, ...userWithoutPassword } = user;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: refresh_token },
+    });
+
+    const { password: _, refreshToken: __, ...userData } = user as any;
 
     return {
-      user: userWithoutPassword,
-      token,
+      user: userData,
+      access_token,
+      refresh_token,
     };
   }
 
   /**
-   * Generates a JWT for the given user.
+   * Refreshes the access token using a refresh token.
    */
-  private static generateToken(user: { id: string; email: string; role: string }) {
-    const secret = process.env.JWT_SECRET;
+  static async refresh(token: string) {
+    const secret = process.env.REFRESH_TOKEN_SECRET;
+    if (!secret) throw new Error("REFRESH_TOKEN_SECRET not set");
 
-    if (!secret) {
-      throw new Error("JWT_SECRET environment variable is not set");
+    try {
+      const decoded = jwt.verify(token, secret) as { id: string };
+      
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+      });
+
+      if (!user || user.refreshToken !== token) {
+        throw new Error("Invalid refresh token");
+      }
+
+      const access_token = this.generateAccessToken(user);
+      const new_refresh_token = this.generateRefreshToken(user);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: new_refresh_token },
+      });
+
+      const { password: _, refreshToken: __, ...userData } = user as any;
+
+      return {
+        user: userData,
+        access_token,
+        refresh_token: new_refresh_token,
+      };
+    } catch (error) {
+      throw new Error("Invalid refresh token");
     }
+  }
 
-    // Token expires in 7 days
+  /**
+   * Invalidates a user's refresh token on logout.
+   */
+  static async logout(token: string) {
+    const secret = process.env.REFRESH_TOKEN_SECRET;
+    if (!secret) throw new Error("REFRESH_TOKEN seed not set");
+
+    try {
+      const decoded = jwt.verify(token, secret) as { id: string };
+      await prisma.user.update({
+        where: { id: decoded.id },
+        data: { refreshToken: null },
+      });
+    } catch (error) {
+      // Token might be expired or invalid, already effectively logged out
+    }
+  }
+
+  private static generateAccessToken(user: any) {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error("JWT_SECRET not set");
+
     return jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-      },
+      { email: user.email, role: user.role, id: user.id },
       secret,
-      { expiresIn: "7d" }
+      { expiresIn: "1d" }
+    );
+  }
+
+  private static generateRefreshToken(user: any) {
+    const secret = process.env.REFRESH_TOKEN_SECRET;
+    if (!secret) throw new Error("REFRESH_TOKEN_SECRET not set");
+
+    return jwt.sign(
+      { email: user.email, role: user.role, id: user.id },
+      secret,
+      { expiresIn: "30m" }
     );
   }
 }

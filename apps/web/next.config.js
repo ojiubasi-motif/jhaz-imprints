@@ -1,10 +1,28 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     images: {
-        domains: ["cdn.example.com", "res.cloudinary.com"], // Add your CDN domains here
+        remotePatterns: [
+            {
+                protocol: 'https',
+                hostname: 'images.unsplash.com',
+            },
+            {
+                protocol: 'https',
+                hostname: 'res.cloudinary.com',
+            },
+        ],
     },
     typescript: {
         tsconfigPath: "./tsconfig.json",
+    },
+    transpilePackages: ["@jhaz-imprints/shared", "@jhaz-imprints/db", "@jhaz-imprints/catalog-db"],
+    async rewrites() {
+        return [
+            {
+                source: '/api/:path*',
+                destination: 'http://localhost:3000/api/:path*' // Proxy to backend
+            }
+        ];
     },
     async headers() {
         return [

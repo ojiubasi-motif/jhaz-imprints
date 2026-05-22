@@ -22,11 +22,11 @@ export function ProductCard({ product }: { product: IProduct }) {
               {product.name}
             </h3>
             <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 capitalize">
-              {product.category.replace(/-/g, " ")}
+              {product.category?.replace(/-/g, " ") || "Uncategorized"}
             </span>
           </div>
           <p className="text-xl font-bold text-secondary mt-auto">
-            ₦{product.basePrice.toLocaleString()}
+            ₦{(product.basePrice || 0).toLocaleString()}
           </p>
         </div>
       </div>

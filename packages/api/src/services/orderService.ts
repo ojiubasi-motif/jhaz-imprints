@@ -14,9 +14,12 @@ import { notificationQueue } from "../queues/notificationWorker";
 export interface CreateOrderInput {
   measurementId: string;
   productId: string;
-  fabricOptionName: string;
-  styleOptionName: string;
+  fabricOptionName?: string;
+  styleOptionName?: string;
+  colorName?: string;
 }
+
+import * as productService from "./productService";
 
 /**
  * Create a new order.
@@ -34,8 +37,8 @@ export interface CreateOrderInput {
  * @returns Order object, payment reference, and Paystack authorization URL
  */
 export async function createOrder(userId: string, input: CreateOrderInput) {
-  // Fetch product from MongoDB
-  const product = await Product.findById(input.productId);
+  // Fetch product from MongoDB (support both ID and Slug)
+  const product = await productService.getProductByIdOrSlug(input.productId);
   if (!product) {
     throw new AppError("Product not found", 404);
   }
@@ -48,16 +51,47 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     throw new AppError("Measurement not found or does not belong to user", 404);
   }
 
-  // Find selected fabric and style options
-  const fabricOption = product.fabricOptions.find(
-    (f) => f.name === input.fabricOptionName
+  // Find selected fabric and style options (Defensive: fallback to Standard if missing)
+  const inputFabricSafe = (input.fabricOptionName ?? "Standard").trim().toLowerCase();
+  const inputStyleSafe = (input.styleOptionName ?? "Standard").trim().toLowerCase();
+
+  const fabricOptions = product.fabricOptions || [];
+  const styleOptions = product.styleOptions || [];
+
+  let fabricOption = fabricOptions.find(
+    (f: any) => (f.name ?? "").trim().toLowerCase() === inputFabricSafe
   );
-  const styleOption = product.styleOptions.find(
-    (s) => s.name === input.styleOptionName
+  
+  // Resilient fallback: If no fabric options are configured, allow "Standard" or "Original" with 0 modifier
+  if (!fabricOption && fabricOptions.length === 0) {
+    if (inputFabricSafe === "standard" || inputFabricSafe === "original" || !input.fabricOptionName) {
+      fabricOption = { name: input.fabricOptionName || "Standard", priceModifier: 0 };
+    }
+  }
+
+  let styleOption = styleOptions.find(
+    (s: any) => (s.name ?? "").trim().toLowerCase() === inputStyleSafe
   );
 
-  if (!fabricOption || !styleOption) {
-    throw new AppError("Invalid fabric or style option", 400);
+  // Resilient fallback: If no style options are configured, allow "Standard" or "Original" with 0 modifier
+  if (!styleOption && styleOptions.length === 0) {
+    if (inputStyleSafe === "standard" || inputStyleSafe === "original" || !input.styleOptionName) {
+      styleOption = { name: input.styleOptionName || "Standard", priceModifier: 0 };
+    }
+  }
+
+  if (!fabricOption) {
+    const available = fabricOptions.length > 0 
+      ? fabricOptions.map((f: any) => f.name).join(', ') 
+      : "NONE CONFIGURED (Ready to Wear)";
+    throw new AppError(`Invalid fabric option. Received: '${input.fabricOptionName}', Available: [${available}]. If this is a standard item, please ensure 'Standard' is selected.`, 400);
+  }
+
+  if (!styleOption) {
+    const available = styleOptions.length > 0 
+      ? styleOptions.map((s: any) => s.name).join(', ') 
+      : "NONE CONFIGURED (Ready to Wear)";
+    throw new AppError(`Invalid style option. Received: '${input.styleOptionName}', Available: [${available}]. If this is a standard item, please ensure 'Standard' is selected.`, 400);
   }
 
   // Compute total price
@@ -74,6 +108,13 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
       data: {
         userId,
         measurementId: input.measurementId,
+        productId: input.productId,
+        styleOptionName: input.styleOptionName,
+        fabricOptionName: input.fabricOptionName,
+        colorName: input.colorName,
+        basePrice: product.basePrice,
+        styleModifier: styleOption.priceModifier,
+        fabricModifier: fabricOption.priceModifier,
         totalAmount,
         status: "PENDING",
       },
@@ -115,6 +156,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     order: createdOrder.order,
     payment: createdOrder.payment,
     paymentUrl: paystackInit.authorizationUrl, // Frontend redirects user to this URL
+    accessCode: paystackInit.accessCode,      // For frontend PaystackPop modal
     reference: createdOrder.reference,
   };
 }
@@ -138,18 +180,33 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
  */
 export async function confirmPayment(reference: string) {
   // Check if payment already processed (idempotency check #1)
-  const existingPayment = await prisma.payment.findUnique({
+  const payment = await prisma.payment.findFirst({
     where: { reference },
   });
 
-  if (!existingPayment) {
+  if (!payment) {
     throw new AppError("Payment not found", 404);
   }
 
   // If already completed, return early (idempotency)
-  if (existingPayment.status === "COMPLETED") {
-    return { order: null, payment: existingPayment, alreadyProcessed: true };
+  if (payment.status === "COMPLETED") {
+    return { alreadyProcessed: true, payment };
   }
+
+  // Fetch order
+  console.log(`[orderService] Confirming payment for reference: ${reference}, orderId: ${payment.orderId}`);
+  const order = await prisma.order.findFirst({
+    where: { id: payment.orderId },
+    include: { payment: true },
+  });
+
+  if (!order) {
+    console.error(`[orderService] Order ${payment.orderId} not found during payment confirmation!`);
+    throw new AppError("Order not found", 404);
+  }
+
+  // Continue with verification...
+  console.log(`[orderService] Verification started for order: ${order.id}`);
 
   // Step 3: Verify transaction with Paystack
   let paystackVerification;
@@ -169,7 +226,7 @@ export async function confirmPayment(reference: string) {
   }
 
   // Verify amount matches
-  if (paystackVerification.amount !== existingPayment.amount) {
+  if (paystackVerification.amount !== payment.amount) {
     throw new AppError(
       "Payment amount mismatch with Paystack verification",
       400
@@ -222,15 +279,35 @@ export async function confirmPayment(reference: string) {
 
   // Enqueue notification job only if this call actually processed the payment
   if (updated.order && !updated.alreadyProcessed) {
-    await notificationQueue.add("order-confirmed", {
-      orderId: updated.order.id,
-      userId: updated.order.userId,
-      userEmail: updated.order.user.email,
-      userPhone: updated.order.user.phone,
-      userName: updated.order.user.firstName,
-      totalPrice: updated.order.totalAmount,
-      measurement: updated.order.measurement,
-    });
+    console.log(`[orderService] Enqueueing notification for order: ${updated.order.id}`);
+    
+    // Augment with product data for notification
+    let productName = "Custom Outfit";
+    try {
+      const product = await productService.getProductByIdOrSlug(updated.order.productId);
+      if (product) productName = product.name;
+    } catch (error) {
+      console.warn(`[orderService] Failed to fetch product info for notification:`, error);
+    }
+    
+    try {
+      await notificationQueue.add("order-confirmed", {
+        orderId: updated.order.id,
+        userId: updated.order.userId,
+        userEmail: updated.order.user.email,
+        userPhone: updated.order.user.phone,
+        userName: updated.order.user.firstName,
+        totalPrice: updated.order.totalAmount,
+        measurement: updated.order.measurement,
+        productName,
+        fabricOption: updated.order.fabricOptionName,
+        colorOption: updated.order.colorName,
+        styleOption: updated.order.styleOptionName,
+      });
+      console.log(`[orderService] ✓ Notification job added to queue`);
+    } catch (error) {
+      console.error(`[orderService] ✗ Failed to add notification job to queue:`, error);
+    }
   }
 
   return { order: updated.order, payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
@@ -244,7 +321,8 @@ export async function confirmPayment(reference: string) {
  * @returns Order with related data
  */
 export async function getOrderById(userId: string, orderId: string) {
-  const order = await prisma.order.findUnique({
+  console.log(`[orderService] Fetching order: ${orderId} for user: ${userId}`);
+  const order = await prisma.order.findFirst({
     where: { id: orderId },
     include: {
       measurement: true,
@@ -253,8 +331,14 @@ export async function getOrderById(userId: string, orderId: string) {
     },
   });
 
+  if (order) {
+    console.log(`[orderService] Found order: ${order.id}, owner: ${order.userId}`);
+  } else {
+    console.log(`[orderService] Order NOT found: ${orderId}`);
+  }
+
   if (!order) {
-    throw new AppError("Order not found", 404);
+    throw new AppError(`Order not found: ${orderId}`, 404);
   }
 
   // Authorization: user can only view their own orders
@@ -262,7 +346,18 @@ export async function getOrderById(userId: string, orderId: string) {
     throw new AppError("Forbidden", 403);
   }
 
-  return order;
+  // Augment with product data from MongoDB
+  let mongoProduct = null;
+  try {
+    mongoProduct = await productService.getProductByIdOrSlug(order.productId);
+  } catch (error) {
+    console.warn(`[orderService] Product ${order.productId} not found for order ${order.id}`);
+  }
+  
+  return {
+    ...order,
+    product: mongoProduct || null,
+  };
 }
 
 /**
@@ -283,7 +378,34 @@ export async function getUserOrders(userId: string, skip = 0, take = 10) {
 
   const total = await prisma.order.count({ where: { userId } });
 
-  return { orders, total, skip, take };
+  // Augment all orders with product data from MongoDB
+  const augmentedOrders = await Promise.all(
+    orders.map(async (order) => {
+      let product = null;
+      try {
+        product = await productService.getProductByIdOrSlug(order.productId);
+      } catch (error) {
+        console.warn(`[orderService] Product ${order.productId} not found for order ${order.id}`);
+      }
+      return {
+        ...order,
+        product: product || null,
+      };
+    })
+  );
+  
+  return { orders: augmentedOrders, total, skip, take };
+}
+
+/**
+ * Retrieve all measurement profiles for a user.
+ */
+export async function getUserMeasurements(userId: string) {
+  const measurements = await prisma.measurement.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+  return measurements;
 }
 
 /**

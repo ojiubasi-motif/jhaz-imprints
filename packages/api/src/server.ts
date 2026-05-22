@@ -19,9 +19,12 @@ const __dirname = dirname(__filename);
 config({ path: resolve(__dirname, "../.env") });
 
 // Dynamic import ensures the above config() call completes first
-const { default: app } = await import("./app.js");
+const { default: app, initializeDatabases } = await import("./app.js");
 
 const PORT = process.env.PORT || 3000;
+
+// Initialize databases before listening
+await initializeDatabases();
 
 app.listen(PORT, () => {
   console.log(`[Server] Listening on port ${PORT}`);

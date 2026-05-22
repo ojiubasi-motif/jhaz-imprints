@@ -18,9 +18,24 @@ export async function createOrderHandler(req: AuthenticatedRequest, res: Respons
     throw new AppError("User not authenticated", 401);
   }
 
-  const result = await orderService.createOrder(req.user.id, req.body);
+  const { order, paymentUrl, reference, accessCode } = await orderService.createOrder(req.user.id, req.body);
 
-  res.status(201).json(result);
+  res.status(201).json({
+    msg: "order created successfully",
+    data: {
+      orderId: order.id,
+      totalAmount: order.totalAmount,
+      status: order.status,
+      reference,
+      paymentUrl,
+      paystackAccessCode: (order as any).accessCode || accessCode,
+      measurement: {
+        profileName: (order as any).measurement?.profileName
+      }
+    },
+    type: "SUCCESS",
+    code: 600
+  });
 }
 
 /**
@@ -42,8 +57,9 @@ export async function createPaymentIntentHandler(req: AuthenticatedRequest, res:
     throw new AppError("Order not found", 404);
   }
 
-  // Check order status - should be PENDING_PAYMENT
-  if (order.status !== "PENDING_PAYMENT") {
+  // Check if order already has a confirmed/completed payment
+  // Only allow payment intent for PENDING orders
+  if (order.status !== "PENDING") {
     throw new AppError(
       `Cannot create payment intent for order with status: ${order.status}`,
       400,
@@ -51,28 +67,30 @@ export async function createPaymentIntentHandler(req: AuthenticatedRequest, res:
     );
   }
 
-  // Initialize payment with Paystack
+  // Initialize payment with Paystack (use totalAmount, not totalPrice)
   const paymentRef = `order_${order.id}_${Date.now()}`;
   const paymentIntent = await paystackService.initializePayment(
     req.user.email,
-    order.totalPrice,
+    order.totalAmount,
     paymentRef,
     {
       orderId: order.id,
       userId: req.user.id,
-      productName: order.productName,
+      customerEmail: req.user.email,
     }
   );
 
   res.json({
-    success: true,
-    paymentIntent: {
+    msg: "payment intent created",
+    data: {
       paystackAccessCode: paymentIntent.accessCode,
       paystackAuthorizationUrl: paymentIntent.authorizationUrl,
       reference: paymentIntent.reference,
       orderId: order.id,
-      amount: order.totalPrice,
+      amount: order.totalAmount,
     },
+    type: "SUCCESS",
+    code: 600
   });
 }
 
@@ -88,7 +106,14 @@ export async function getOrderHandler(req: AuthenticatedRequest, res: Response) 
   const { orderId } = req.params;
   const order = await orderService.getOrderById(req.user.id, orderId);
 
-  res.json(order);
+  const sanitizedOrder = order as any;
+
+  res.json({
+    msg: "order details",
+    data: sanitizedOrder,
+    type: "SUCCESS",
+    code: 600
+  });
 }
 
 /**
@@ -105,7 +130,47 @@ export async function getUserOrdersHandler(req: AuthenticatedRequest, res: Respo
 
   const result = await orderService.getUserOrders(req.user.id, skip, take);
 
-  res.json(result);
+  console.log(`[orderHandler] Successfully returned ${result.orders.length} orders for user ${req.user.id}`);
+  res.json({
+    msg: "user orders",
+    data: {
+      items: result.orders,
+      total: result.total,
+      skip: result.skip,
+      take: result.take,
+    },
+    type: "SUCCESS",
+    code: 600
+  });
+}
+
+/**
+ * POST /api/orders/verify/:reference
+ * Manually verify a payment reference from the frontend.
+ */
+export async function verifyPaymentHandler(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
+
+  const { reference } = req.params;
+
+  if (!reference) {
+    throw new AppError("Payment reference is required", 400);
+  }
+
+  const result = await orderService.confirmPayment(reference);
+
+  res.json({
+    msg: "payment verified successfully",
+    data: {
+      orderId: result.order?.id,
+      status: result.order?.status || "CONFIRMED",
+      alreadyProcessed: result.alreadyProcessed
+    },
+    type: "SUCCESS",
+    code: 600
+  });
 }
 
 /**
@@ -119,18 +184,24 @@ export async function paystackWebhookHandler(req: Request, res: Response) {
     throw new AppError("Invalid webhook payload", 400);
   }
 
-  // Verify webhook signature (in production)
-  // const signature = req.headers['x-paystack-signature'];
-  // validatePaystackSignature(req.body, signature);
+  // Verify webhook signature (Crucial for production security)
+  const signature = req.headers["x-paystack-signature"] as string;
+  if (!signature || !paystackService.verifyWebhookSignature(req.body, signature)) {
+    throw new AppError("Invalid paystack signature", 401);
+  }
 
   const result = await orderService.confirmPayment(data.reference);
 
   // Always return 200 to acknowledge receipt (idempotency)
   res.status(200).json({
-    success: true,
-    order: result.order,
-    payment: result.payment,
-    alreadyProcessed: result.alreadyProcessed,
+    msg: "payment confirmed",
+    data: {
+      orderId: result.order.id,
+      status: result.order.status,
+      alreadyProcessed: result.alreadyProcessed
+    },
+    type: "SUCCESS",
+    code: 600
   });
 }
 
@@ -145,5 +216,36 @@ export async function createMeasurementHandler(req: AuthenticatedRequest, res: R
 
   const measurement = await orderService.createMeasurement(req.user.id, req.body);
 
-  res.status(201).json(measurement);
+  const { createdAt: _, updatedAt: __, ...sanitizedMeasurement } = measurement as any;
+
+  res.status(201).json({
+    msg: "measurement profile created",
+    data: sanitizedMeasurement,
+    type: "SUCCESS",
+    code: 600
+  });
+}
+
+/**
+ * GET /api/orders/measurements
+ * Retrieve all measurement profiles for the authenticated user.
+ */
+export async function getUserMeasurementsHandler(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
+
+  const measurements = await orderService.getUserMeasurements(req.user.id);
+
+  const sanitizedMeasurements = measurements.map((m: any) => {
+    const sanitized = m;
+    return sanitized;
+  });
+
+  res.status(200).json({
+    msg: "user measurements retrieved",
+    data: sanitizedMeasurements,
+    type: "SUCCESS",
+    code: 600
+  });
 }

@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { fetchApi } from '@/lib/api';
+import { fetchApi } from '@/lib/apiClient';
 import type { MeasurementCreate } from '@jhaz-imprints/shared';
 
 interface MeasurementsState {

@@ -5,10 +5,11 @@ import { useEffect } from "react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchProducts } from "@/store/slices/productsSlice";
 import { ProductCard } from "@/components/products/ProductCard";
+import type { RootState } from "@/store";
 
 export default function HomePage() {
   const dispatch = useAppDispatch();
-  const { items, isLoading } = useAppSelector((state) => state.products);
+  const { items, isLoading } = useAppSelector((state: RootState) => state.products);
 
   useEffect(() => {
     dispatch(fetchProducts({}));
@@ -79,7 +80,7 @@ export default function HomePage() {
           ) : (
             <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
               {featuredProducts.map((product) => (
-                <ProductCard key={product.slug || product._id} product={product} />
+                <ProductCard key={product.slug || product._id?.toString()} product={product} />
               ))}
             </div>
           )}
