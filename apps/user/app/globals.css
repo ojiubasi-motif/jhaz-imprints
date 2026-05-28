@@ -4,40 +4,77 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Jhaz-Imprints Theme: Rich Green, Gold, Cream */
-  --background: #FDF6EC;
-  --foreground: #1B4332;
+  /* Jhaz-Imprints Brand System — Light Mode */
+  --background: #FAF6EF;
+  --foreground: #1A1209;
   --card: #FFFFFF;
-  --card-foreground: #1B4332;
+  --card-foreground: #1A1209;
   --popover: #FFFFFF;
-  --popover-foreground: #1B4332;
-  --primary: #1B4332;
-  --primary-foreground: #FDF6EC;
-  --secondary: #F5EDD6;
-  --secondary-foreground: #1B4332;
+  --popover-foreground: #1A1209;
+  --primary: #B8860B;
+  --primary-foreground: #1A1209;
+  --secondary: #F5ECD7;
+  --secondary-foreground: #1A1209;
   --muted: #F0E8D4;
-  --muted-foreground: #5C7A6B;
-  --accent: #D4A017;
-  --accent-foreground: #1B4332;
+  --muted-foreground: #7A6A4F;
+  --accent: #B8860B;
+  --accent-foreground: #1A1209;
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: #D6CCAF;
-  --input: #D6CCAF;
-  --ring: #D4A017;
-  --chart-1: #1B4332;
+  --border: rgba(26, 18, 9, 0.08);
+  --input: rgba(26, 18, 9, 0.12);
+  --ring: #B8860B;
+  --chart-1: #B8860B;
   --chart-2: #D4A017;
-  --chart-3: #2D6A4F;
-  --chart-4: #B8860B;
-  --chart-5: #40916C;
-  --radius: 0.5rem;
-  --sidebar: #1B4332;
-  --sidebar-foreground: #FDF6EC;
-  --sidebar-primary: #D4A017;
-  --sidebar-primary-foreground: #1B4332;
-  --sidebar-accent: #2D6A4F;
-  --sidebar-accent-foreground: #FDF6EC;
-  --sidebar-border: #2D6A4F;
-  --sidebar-ring: #D4A017;
+  --chart-3: #1A1209;
+  --chart-4: #7A6A4F;
+  --chart-5: #C9A84C;
+  --radius: 0.625rem;
+  --sidebar: #1A1209;
+  --sidebar-foreground: #FAF6EF;
+  --sidebar-primary: #B8860B;
+  --sidebar-primary-foreground: #1A1209;
+  --sidebar-accent: #2A2218;
+  --sidebar-accent-foreground: #FAF6EF;
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  --sidebar-ring: #B8860B;
+
+  /* Brand-specific tokens */
+  --gold: #B8860B;
+  --gold-light: #D4A017;
+  --gold-badge-bg: rgba(184, 134, 11, 0.10);
+  --dark-text: #1A1209;
+  --muted-text: #7A6A4F;
+  --surface: #FFFFFF;
+  --bg: #FAF6EF;
+}
+
+.dark {
+  --background: #1C1710;
+  --foreground: #F5ECD7;
+  --card: #2A2218;
+  --card-foreground: #F5ECD7;
+  --popover: #2A2218;
+  --popover-foreground: #F5ECD7;
+  --primary: #D4AF37;
+  --primary-foreground: #1C1710;
+  --secondary: #2A2218;
+  --secondary-foreground: #F5ECD7;
+  --muted: #2A2218;
+  --muted-foreground: #A89880;
+  --accent: #D4AF37;
+  --accent-foreground: #1C1710;
+  --border: rgba(255, 255, 255, 0.07);
+  --input: rgba(255, 255, 255, 0.10);
+  --ring: #D4AF37;
+
+  --gold: #D4AF37;
+  --gold-light: #E8C547;
+  --gold-badge-bg: rgba(212, 175, 55, 0.15);
+  --dark-text: #F5ECD7;
+  --muted-text: #A89880;
+  --surface: #2A2218;
+  --bg: #1C1710;
 }
 
 @theme inline {
@@ -80,13 +117,9 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --color-gold: #D4A017;
-  --color-gold-light: #E8C547;
-  --color-green-deep: #1B4332;
-  --color-green-mid: #2D6A4F;
-  --color-green-light: #40916C;
-  --color-cream: #FDF6EC;
-  --color-cream-dark: #F5EDD6;
+  --color-gold: var(--gold);
+  --color-gold-light: var(--gold-light);
+  --color-gold-badge: var(--gold-badge-bg);
 }
 
 @layer base {

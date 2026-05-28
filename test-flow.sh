@@ -18,7 +18,7 @@
 
 set -e
 
-API_URL="http://localhost:3000/api"
+API_URL="http://localhost:8080/api"
 WEB_URL="http://localhost:3003"
 COOKIE_JAR="/tmp/cookies.txt"
 
@@ -137,7 +137,7 @@ echo ""
 # STEP 5: FETCH PRODUCTS (FOR CHECKOUT)
 # ============================================================================
 echo -e "${YELLOW}[5/10]${NC} Fetching products for checkout..."
-PRODUCTS=$(curl -s "$API_URL/products")
+PRODUCTS=$(curl -s "$API_URL/v1/products")
 
 PRODUCT_ID=$(echo "$PRODUCTS" | jq -r '.data[0].id // empty')
 PRODUCT_NAME=$(echo "$PRODUCTS" | jq -r '.data[0].name // empty')
@@ -146,7 +146,7 @@ PRODUCT_PRICE=$(echo "$PRODUCTS" | jq -r '.data[0].price // empty')
 if [ -z "$PRODUCT_ID" ]; then
   echo -e "${YELLOW}⚠ No products in catalog, creating test product...${NC}"
   # Create a test product
-  PRODUCT_CREATE=$(curl -s -X POST "$API_URL/products" \
+  PRODUCT_CREATE=$(curl -s -X POST "$API_URL/v1/admin/products" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $LOGIN_TOKEN" \
     -d '{

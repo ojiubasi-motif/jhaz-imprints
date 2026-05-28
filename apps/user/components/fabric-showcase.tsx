@@ -47,9 +47,9 @@ export function FabricShowcase() {
             </div>
 
             {/* Floating accent */}
-            <div className="absolute -bottom-6 -right-6 hidden rounded-xl bg-accent px-6 py-4 shadow-xl sm:block">
-              <p className="text-sm font-bold text-green-deep">50+ Fabrics</p>
-              <p className="text-xs text-green-deep/70">Available to choose from</p>
+            <div className="absolute -bottom-6 -right-6 hidden rounded-xl bg-card border border-border/50 px-6 py-4 shadow-lg sm:block">
+              <p className="text-sm font-bold text-primary">50+ Fabrics</p>
+              <p className="text-xs text-muted-foreground">Available to choose from</p>
             </div>
           </div>
 
@@ -69,7 +69,7 @@ export function FabricShowcase() {
             <div className="mt-10 grid gap-6 sm:grid-cols-2">
               {features.map((feature) => (
                 <div key={feature.title} className="flex gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--gold-badge-bg)]">
                     <feature.icon className="h-5 w-5 text-primary" />
                   </div>
                   <div>

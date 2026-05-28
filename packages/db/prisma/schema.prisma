@@ -2,7 +2,8 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl"]
 }
 
 datasource db {
@@ -142,4 +143,23 @@ model OrderStatusHistory {
   note        String?  // e.g., tailor's production notes
   
   createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// MATERIALIZED VIEW (EVENT REPLICATION)
+// ==========================================
+model CachedProduct {
+  id              String   @id // Corresponds to MongoDB ObjectId
+  slug            String   @unique
+  name            String
+  basePrice       Float
+  isActive        Boolean  @default(true)
+  
+  // Stored as JSON arrays to simplify local calculation without relational overhead
+  fabricOptions   Json     // [{ name: string, priceModifier: number }]
+  styleOptions    Json     // [{ name: string, priceModifier: number }]
+  colorOptions    Json     // [{ name: string, inStock: boolean }]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

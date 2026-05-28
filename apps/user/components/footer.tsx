@@ -5,12 +5,12 @@ import { ArrowRight, Mail, Phone, MapPin } from "lucide-react"
 
 const footerLinks = {
   shop: [
-    { label: "Agbada", href: "#" },
-    { label: "Ankara", href: "#" },
-    { label: "Aso-Oke", href: "#" },
-    { label: "Kaftan", href: "#" },
-    { label: "Iro & Buba", href: "#" },
-    { label: "Babariga", href: "#" },
+    { label: "All Styles", href: "/catalog" },
+    { label: "Agbada", href: "/catalog" },
+    { label: "Ankara", href: "/catalog" },
+    { label: "Aso-Oke", href: "/catalog" },
+    { label: "Kaftan", href: "/catalog" },
+    { label: "Iro & Buba", href: "/catalog" },
   ],
   company: [
     { label: "About Us", href: "#" },
@@ -77,7 +77,7 @@ export function Footer() {
                   />
                   <button
                     type="submit"
-                    className="inline-flex shrink-0 items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-green-deep transition-all hover:bg-gold-light hover:shadow-lg"
+                    className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/80 hover:shadow-lg"
                   >
                     Subscribe
                     <ArrowRight className="h-4 w-4" />
@@ -95,11 +95,11 @@ export function Footer() {
           {/* Brand Column */}
           <div className="lg:col-span-2">
             <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gold">
-                <span className="text-sm font-bold text-green-deep tracking-tight">JI</span>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary">
+                <span className="text-sm font-bold text-primary-foreground tracking-tight">JI</span>
               </div>
               <span className="text-xl font-bold tracking-tight font-[family-name:var(--font-playfair)]">
-                Jhaz-Imprints
+                Jhaz Imprints
               </span>
             </div>
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-primary-foreground/60">

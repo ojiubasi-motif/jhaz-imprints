@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Menu, X, ShoppingBag } from "lucide-react"
 
 const navLinks = [
+  { label: "Shop", href: "/catalog" },
   { label: "Styles", href: "#styles" },
   { label: "How It Works", href: "#how-it-works" },
   { label: "Fabrics", href: "#fabrics" },
@@ -14,7 +15,7 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-cream/80 backdrop-blur-lg border-b border-border/50">
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/90 backdrop-blur-lg border-b border-border/50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between lg:h-20">
           {/* Logo */}
@@ -23,7 +24,7 @@ export function Navbar() {
               <span className="text-sm font-bold text-primary-foreground tracking-tight">JI</span>
             </div>
             <span className="text-xl font-bold tracking-tight text-primary font-[family-name:var(--font-playfair)]">
-              Jhaz-Imprints
+              Jhaz Imprints
             </span>
           </a>
 
@@ -43,8 +44,8 @@ export function Navbar() {
           {/* Desktop CTA */}
           <div className="hidden lg:flex lg:items-center lg:gap-4">
             <a
-              href="#styles"
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-green-mid hover:shadow-lg"
+              href="/order"
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/80"
             >
               <ShoppingBag className="h-4 w-4" />
               Order Now
@@ -64,7 +65,7 @@ export function Navbar() {
 
       {/* Mobile Menu */}
       {mobileOpen && (
-        <div className="lg:hidden bg-cream border-t border-border/50">
+        <div className="lg:hidden bg-background border-t border-border/50">
           <div className="px-4 py-4 space-y-3">
             {navLinks.map((link) => (
               <a
@@ -77,9 +78,9 @@ export function Navbar() {
               </a>
             ))}
             <a
-              href="#styles"
+              href="/order"
               onClick={() => setMobileOpen(false)}
-              className="flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-green-mid"
+              className="flex items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/80"
             >
               <ShoppingBag className="h-4 w-4" />
               Order Now

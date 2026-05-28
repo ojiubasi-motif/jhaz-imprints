@@ -87,7 +87,7 @@ export function FeaturedStyles() {
                 <div className="absolute inset-0 bg-gradient-to-t from-primary/80 via-primary/20 to-transparent" />
 
                 {/* Tag */}
-                <span className="absolute top-4 left-4 rounded-full bg-gold/90 px-3 py-1 text-xs font-semibold text-green-deep">
+                <span className="absolute top-4 left-4 rounded-full bg-[var(--gold-badge-bg)] border border-primary/20 px-3 py-1 text-xs font-semibold text-primary">
                   {cat.tag}
                 </span>
 

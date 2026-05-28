@@ -1,0 +1,88 @@
+# ─────────────────────────────────────────────
+# Dependencies — never copy these in; Docker installs fresh
+# ─────────────────────────────────────────────
+**/node_modules
+**/.npm
+**/.pnpm-store
+**/.pnpm
+**/virtual-store
+**/.yarn
+
+# ─────────────────────────────────────────────
+# Build artifacts — builder stage compiles these fresh
+# ─────────────────────────────────────────────
+**/dist
+**/build
+**/.turbo
+**/.tsup
+
+# ─────────────────────────────────────────────
+# Environment & secrets — never bake into the image
+# ─────────────────────────────────────────────
+**/.env
+**/.env.*
+!**/.env.example
+
+# ─────────────────────────────────────────────
+# Git & version control
+# ─────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+**/.github
+
+# ─────────────────────────────────────────────
+# Logs & debug output
+# ─────────────────────────────────────────────
+**/logs
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# ─────────────────────────────────────────────
+# Test & coverage artifacts
+# ─────────────────────────────────────────────
+**/coverage
+**/.nyc_output
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+**/vitest.config.*
+
+# ─────────────────────────────────────────────
+# TypeScript diagnostics — not needed at runtime
+# ─────────────────────────────────────────────
+**/*.tsbuildinfo
+
+# ─────────────────────────────────────────────
+# Editor & OS clutter
+# ─────────────────────────────────────────────
+.vscode
+.idea
+**/.DS_Store
+**/Thumbs.db
+**/*.swp
+**/*.swo
+
+# ─────────────────────────────────────────────
+# Docker files themselves (no need to copy in)
+# ─────────────────────────────────────────────
+**/Dockerfile
+**/docker-compose*.yml
+**/.dockerignore
+
+# ─────────────────────────────────────────────
+# Docs & non-runtime markdown
+# ─────────────────────────────────────────────
+**/README.md
+**/CHANGELOG.md
+**/*.prompt.md
+**/docs
+
+# ─────────────────────────────────────────────
+# Scratch / temp workspace
+# ─────────────────────────────────────────────
+packages/scratch
+**/tmp
+**/temp

@@ -4,12 +4,14 @@
     "private": true,
     "description": "MongoDB product catalog models and connection for Jhaz-imprints",
     "type": "module",
+    "main": "./dist/index.js",
     "exports": {
-        ".": "./src/index.ts",
-        "./models": "./src/models/index.ts",
-        "./connection": "./src/connection.ts"
+        ".": "./dist/index.js",
+        "./models": "./dist/models/index.js",
+        "./connection": "./dist/connection.js"
     },
     "scripts": {
+        "build": "tsup src/index.ts --format esm --dts --out-dir dist",
         "type-check": "tsc --noEmit"
     },
     "dependencies": {
@@ -19,6 +21,7 @@
     "devDependencies": {
         "@types/mongoose-paginate-v2": "^1.6.5",
         "@types/node": "^20.11.0",
+        "tsup": "^8.0.0",
         "typescript": "^5.3.3"
     }
 }

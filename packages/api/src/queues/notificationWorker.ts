@@ -18,6 +18,7 @@ export const notificationQueue = new Queue("notifications", {
   connection: {
     host: process.env.REDIS_HOST || "localhost",
     port: parseInt(process.env.REDIS_PORT || "6379"),
+    password: process.env.REDIS_PASSWORD,
   },
   defaultJobOptions: {
     attempts: 3,
@@ -167,6 +168,7 @@ export function startNotificationWorker() {
       connection: {
         host: process.env.REDIS_HOST || "localhost",
         port: parseInt(process.env.REDIS_PORT || "6379"),
+        password: process.env.REDIS_PASSWORD,
       },
       concurrency: 5,
     }

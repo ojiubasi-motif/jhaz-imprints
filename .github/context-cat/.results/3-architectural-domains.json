@@ -1,0 +1,51 @@
+{
+  "routing": {
+    "required_patterns": {
+      "route-definitions": "Use Express Router. Routes are defined in the `src/routes/` directory."
+    },
+    "architectural_constraints": {
+      "route-mounting": "All routers must be mounted in `src/server.ts` under the `/api/v1/...` path structure."
+    }
+  },
+  "controllers-handlers": {
+    "required_patterns": {
+      "async-error-handling": "Wrap all asynchronous route handlers in `asyncHandler` (from `src/utils/asyncHandler.ts`) to automatically pass errors to Express."
+    },
+    "architectural_constraints": {
+      "separation-of-concerns": "Handlers must only extract `req` data, invoke `services`, and format `res` output. No complex business logic."
+    }
+  },
+  "services": {
+    "required_patterns": {
+      "business-logic": "Encapsulate core business logic, database queries, and third-party API interactions (e.g., Cloudinary) in `src/services/`."
+    },
+    "architectural_constraints": {
+      "http-agnostic": "Services must not directly interact with Express `req` or `res` objects. They should throw custom `AppError` on failure."
+    }
+  },
+  "middleware": {
+    "required_patterns": {
+      "auth": "Use `authenticate` and `authorize` middleware to protect secured routes.",
+      "validation": "Use `validateBody` middleware with Zod schemas (imported from shared package) to validate request payloads."
+    },
+    "architectural_constraints": {
+      "pre-handler-execution": "Middleware must be chained in route definitions before the final handler executes."
+    }
+  },
+  "data-layer": {
+    "required_patterns": {
+      "mongodb-models": "Import and use Mongoose models (like `Product`) and connection utilities directly from the workspace package `@jhaz-imprints/catalog-db`."
+    },
+    "architectural_constraints": {
+      "no-prisma": "This microservice uses MongoDB via Mongoose. Prisma (which is used elsewhere in the monorepo) is strictly forbidden here."
+    }
+  },
+  "error-handling": {
+    "required_patterns": {
+      "custom-errors": "Use the custom `AppError` class (from `src/errors/AppError.ts`) to throw operational errors with specific HTTP status codes."
+    },
+    "architectural_constraints": {
+      "global-handling": "Errors must bubble up to the global Express error handler rather than being manually caught and sent as responses in every function."
+    }
+  }
+}

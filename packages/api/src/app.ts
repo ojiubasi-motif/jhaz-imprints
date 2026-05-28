@@ -8,13 +8,11 @@ import cookieParser from "cookie-parser";
 import { connectMongoDB } from "@jhaz-imprints/catalog-db";
 import { prisma } from "@jhaz-imprints/db";
 import ordersRouter from "./routes/orders";
-import uploadsRouter from "./routes/uploads";
-import productsRouter from "./routes/products";
 import authRouter from "./routes/auth";
-import adminProductsRouter from "./routes/adminProducts";
 import helmet from "helmet";
 import { AppError, isAppError } from "./errors/AppError";
 import { startNotificationWorker } from "./queues/notificationWorker";
+import { startCatalogEventWorker } from "./queues/catalogEventWorker";
 
 const app = express();
 
@@ -63,14 +61,19 @@ export async function initializeDatabases() {
     console.error("[App] Failed to start notification worker:", error);
     // Don't exit - notifications are non-critical
   }
+
+  try {
+    // Start Catalog Event Replication worker
+    startCatalogEventWorker();
+    console.log("[App] Catalog Event Replication worker started");
+  } catch (error) {
+    console.error("[App] Failed to start Catalog Event Replication worker:", error);
+  }
 }
 
 // Routes
 app.use("/api/auth", authRouter);
-app.use("/api/products", productsRouter);
 app.use("/api/orders", ordersRouter);
-app.use("/api/v1/admin/uploads", uploadsRouter);
-app.use("/api/v1/admin/products", adminProductsRouter);
 
 // Health check
 app.get("/api/health", (req, res) => {
@@ -109,6 +112,7 @@ app.use((req: Request, res: Response) => {
 // Graceful shutdown
 process.on("SIGINT", async () => {
   console.log("[App] Shutting down gracefully...");
+  import("./queues/catalogEventWorker").then(({ stopCatalogEventWorker }) => stopCatalogEventWorker());
   await prisma.$disconnect();
   process.exit(0);
 });

@@ -19,7 +19,13 @@ export interface CreateOrderInput {
   colorName?: string;
 }
 
-import * as productService from "./productService";
+async function getCachedProductByIdOrSlug(idOrSlug: string) {
+  const isObjectId = /^[a-f\d]{24}$/i.test(idOrSlug);
+  if (isObjectId) {
+    return prisma.cachedProduct.findUnique({ where: { id: idOrSlug } });
+  }
+  return prisma.cachedProduct.findUnique({ where: { slug: idOrSlug } });
+}
 
 /**
  * Create a new order.
@@ -37,8 +43,8 @@ import * as productService from "./productService";
  * @returns Order object, payment reference, and Paystack authorization URL
  */
 export async function createOrder(userId: string, input: CreateOrderInput) {
-  // Fetch product from MongoDB (support both ID and Slug)
-  const product = await productService.getProductByIdOrSlug(input.productId);
+  // Fetch product from local cache (Event Replicated from Catalog Service)
+  const product = await getCachedProductByIdOrSlug(input.productId);
   if (!product) {
     throw new AppError("Product not found", 404);
   }
@@ -55,8 +61,9 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
   const inputFabricSafe = (input.fabricOptionName ?? "Standard").trim().toLowerCase();
   const inputStyleSafe = (input.styleOptionName ?? "Standard").trim().toLowerCase();
 
-  const fabricOptions = product.fabricOptions || [];
-  const styleOptions = product.styleOptions || [];
+  // Prisma Json fields are returned as JsonValue. Cast to array of options.
+  const fabricOptions = (product.fabricOptions as any[]) || [];
+  const styleOptions = (product.styleOptions as any[]) || [];
 
   let fabricOption = fabricOptions.find(
     (f: any) => (f.name ?? "").trim().toLowerCase() === inputFabricSafe
@@ -109,8 +116,8 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
         userId,
         measurementId: input.measurementId,
         productId: input.productId,
-        styleOptionName: input.styleOptionName,
-        fabricOptionName: input.fabricOptionName,
+        styleOptionName: styleOption.name,
+        fabricOptionName: fabricOption.name,
         colorName: input.colorName,
         basePrice: product.basePrice,
         styleModifier: styleOption.priceModifier,
@@ -142,13 +149,13 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
   // Step 1: Initialize transaction with Paystack
   // This returns the authorization URL that the frontend will redirect to
   const paystackInit = await initializePayment(
-    createdOrder.order.user.email,
+    (createdOrder.order as any).user.email,
     totalAmount,
     createdOrder.reference,
     {
       orderId: createdOrder.order.id,
       userId,
-      customerEmail: createdOrder.order.user.email,
+      customerEmail: (createdOrder.order as any).user.email,
     }
   );
 
@@ -284,7 +291,7 @@ export async function confirmPayment(reference: string) {
     // Augment with product data for notification
     let productName = "Custom Outfit";
     try {
-      const product = await productService.getProductByIdOrSlug(updated.order.productId);
+      const product = await getCachedProductByIdOrSlug(updated.order.productId);
       if (product) productName = product.name;
     } catch (error) {
       console.warn(`[orderService] Failed to fetch product info for notification:`, error);
@@ -346,17 +353,16 @@ export async function getOrderById(userId: string, orderId: string) {
     throw new AppError("Forbidden", 403);
   }
 
-  // Augment with product data from MongoDB
-  let mongoProduct = null;
+  let localProduct = null;
   try {
-    mongoProduct = await productService.getProductByIdOrSlug(order.productId);
+    localProduct = await getCachedProductByIdOrSlug(order.productId);
   } catch (error) {
     console.warn(`[orderService] Product ${order.productId} not found for order ${order.id}`);
   }
   
   return {
     ...order,
-    product: mongoProduct || null,
+    product: localProduct || null,
   };
 }
 
@@ -378,12 +384,12 @@ export async function getUserOrders(userId: string, skip = 0, take = 10) {
 
   const total = await prisma.order.count({ where: { userId } });
 
-  // Augment all orders with product data from MongoDB
+  // Augment all orders with product data from Local Cache
   const augmentedOrders = await Promise.all(
     orders.map(async (order) => {
       let product = null;
       try {
-        product = await productService.getProductByIdOrSlug(order.productId);
+        product = await getCachedProductByIdOrSlug(order.productId);
       } catch (error) {
         console.warn(`[orderService] Product ${order.productId} not found for order ${order.id}`);
       }

@@ -1,0 +1,55 @@
+You are building a premium Nigerian traditional fashion 
+e-commerce platform called "Jhaz Imprints" with the 
+tagline "Elegance Redefined".
+
+Apply the following design system strictly across all 
+components, pages, and states:
+
+--- BRAND IDENTITY ---
+Name: Jhaz Imprints
+Tagline: Elegance Redefined
+Vibe: Premium, warm, proudly Nigerian, modern African luxury
+Typography: Elegant serif for headings (e.g. Playfair Display 
+            or Cormorant Garamond), clean sans-serif for body
+
+--- COLOR TOKENS ---
+
+Light mode (Primary):
+  Background:     #FAF6EF
+  Surface/Cards:  #FFFFFF
+  Primary/Gold:   #B8860B
+  Text:           #1A1209
+  Muted text:     #7A6A4F
+  Border:         rgba(26, 18, 9, 0.08)
+  Badge bg:       rgba(184, 134, 11, 0.10)
+
+Dark mode:
+  Background:     #1C1710
+  Surface/Cards:  #2A2218
+  Primary/Gold:   #D4AF37
+  Text:           #F5ECD7
+  Muted text:     #A89880
+  Border:         rgba(255, 255, 255, 0.07)
+  Badge bg:       rgba(212, 175, 55, 0.15)
+
+--- COMPONENT RULES ---
+- Navbar: brand name in gold, "Order Now" CTA button 
+  filled with primary gold, dark text on gold
+- Buttons (primary): gold background, dark text, 
+  rounded-lg, no harsh shadows
+- Buttons (ghost): transparent, thin gold or dark border
+- Cards: white (light) or #2A2218 (dark), subtle border, 
+  rounded-xl, card price always in gold
+- Badges: gold-tinted background, gold text, pill shape
+- Section alternation: swap between background and 
+  surface colors for visual rhythm
+- All prices in Naira (₦)
+- Support both light and dark mode using the tokens above
+
+--- DESIGN RULES ---
+- Mobile-first, fully responsive
+- No harsh drop shadows — use subtle borders instead
+- Generous whitespace, premium editorial feel
+- Warm and cultural, not cold or sterile
+- Built with React and Tailwind CSS
+- Use CSS variables or Tailwind config for the color tokens

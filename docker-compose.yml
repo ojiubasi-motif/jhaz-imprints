@@ -1,0 +1,280 @@
+name: jhaz-imprints
+
+services:
+
+  # ─────────────────────────────────────────────
+  # API Gateway — single public-facing entry point
+  # Routes traffic to catalog-service and core-api
+  # on the internal catalog-net network.
+  # ─────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: packages/gateway/Dockerfile
+      network: host
+    image: jhaz-imprints/gateway:latest
+    container_name: jhaz-gateway
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: 8080
+
+      # Shared JWT secret — must match catalog-service and core-api
+      JWT_SECRET: ${JWT_SECRET}
+
+      # Downstream service URLs (internal Docker network names)
+      CATALOG_SERVICE_URL: http://catalog-service:3001
+      CORE_API_URL: http://core-api:5000
+
+      # CORS — comma-separated list of allowed origins (or * for development)
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-*}
+
+    depends_on:
+      catalog-service:
+        condition: service_healthy
+      core-api:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - catalog-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────────
+  # catalog-service — internal only (no host port)
+  # Only reachable via the gateway on catalog-net.
+  # ─────────────────────────────────────────────
+  catalog-service:
+    build:
+      context: .
+      dockerfile: packages/catalog-service/Dockerfile
+      network: host
+    image: jhaz-imprints/catalog-service:latest
+    container_name: catalog-service
+    restart: on-failure:5
+    # ⚠️ No host port mapping — catalog-service is internal only.
+    # Access exclusively through the gateway on port 8080.
+    # To debug locally: docker exec -it catalog-service sh
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+
+      # MongoDB Atlas — full SRV connection string set in .env
+      MONGODB_URI: ${MONGODB_URI}
+
+      # Redis (local container)
+      REDIS_URL: redis://:${REDIS_PASSWORD}@catalog-redis:6379
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+
+      # Cloudinary
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+
+    depends_on:
+      catalog-redis:
+        condition: service_healthy
+      atlas-healthcheck:
+        condition: service_completed_successfully
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    networks:
+      - catalog-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ─────────────────────────────────────────────
+  # Atlas connectivity pre-check
+  # Verifies MongoDB Atlas is reachable before
+  # catalog-service starts. Runs once, exits 0.
+  # ─────────────────────────────────────────────
+  atlas-healthcheck:
+    image: node:20-alpine
+    container_name: atlas-healthcheck
+    restart: "no"
+    environment:
+      MONGODB_URI: ${MONGODB_URI}
+    command: >
+      node -e "
+        const dns = require('dns').promises;
+        const net = require('net');
+        const uri = process.env.MONGODB_URI || '';
+        const srvHost = uri
+          .replace('mongodb+srv://', '')
+          .replace(/.*@/, '')
+          .split('/')[0];
+
+        async function check(attempt = 0) {
+          try {
+            console.log('[Atlas] Resolving SRV for:', srvHost);
+            const records = await dns.resolveSrv('_mongodb._tcp.' + srvHost);
+            const { name, port } = records[0];
+            console.log('[Atlas] Probing node:', name + ':' + port);
+            await new Promise((resolve, reject) => {
+              const socket = net.createConnection({ host: name, port }, () => {
+                socket.destroy();
+                resolve();
+              });
+              socket.on('error', reject);
+              socket.setTimeout(5000, () => reject(new Error('timeout')));
+            });
+            console.log('[Atlas] Reachable — starting catalog-service');
+            process.exit(0);
+          } catch (err) {
+            if (attempt < 12) {
+              console.warn('[Atlas] Attempt ' + (attempt + 1) + '/12 failed:', err.message, '— retrying in 5s');
+              await new Promise(r => setTimeout(r, 5000));
+              return check(attempt + 1);
+            }
+            console.error('[Atlas] Unreachable after 12 attempts. Aborting.');
+            process.exit(1);
+          }
+        }
+
+        check();
+      "
+    networks:
+      - catalog-net
+
+  # ─────────────────────────────────────────────
+  # Redis — internal only, no host port
+  # Accessed by catalog-service for caching and
+  # Redis Streams event replication.
+  # ─────────────────────────────────────────────
+  catalog-redis:
+    image: redis:8-alpine
+    container_name: catalog-redis
+    restart: unless-stopped
+    # No host port exposed — Redis is internal to catalog-net only.
+    # Debug locally: docker exec -it catalog-redis redis-cli -a $REDIS_PASSWORD
+    command: >
+      redis-server
+        --requirepass ${REDIS_PASSWORD}
+        --bind 0.0.0.0
+        --protected-mode yes
+        --maxmemory 256mb
+        --maxmemory-policy allkeys-lru
+        --save 60 1
+        --loglevel notice
+    volumes:
+      - catalog-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - catalog-net
+
+  # ─────────────────────────────────────────────
+  # PostgreSQL — local relational database for core-api
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: jhaz-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - catalog-net
+
+  # ─────────────────────────────────────────────
+  # core-api — orders, authentication, notifications
+  # Only reachable via the gateway on catalog-net.
+  # ─────────────────────────────────────────────
+  core-api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+      network: host
+    container_name: core-api
+    restart: on-failure:5
+    # No host port exposed — only accessible via the gateway on port 8080.
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-ATlag1991}@postgres:5432/${POSTGRES_DB:-jhaz-imprints}?schema=public
+      MONGODB_URI: ${MONGODB_URI}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@catalog-redis:6379
+      REDIS_HOST: catalog-redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      EMAIL_FROM: ${EMAIL_FROM}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM}
+      TAILOR_PHONE: ${TAILOR_PHONE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      catalog-redis:
+        condition: service_healthy
+      atlas-healthcheck:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - catalog-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  catalog-redis-data:
+  postgres-data:
+
+networks:
+  catalog-net:
+    driver: bridge

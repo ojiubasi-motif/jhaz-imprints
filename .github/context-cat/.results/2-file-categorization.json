@@ -1,0 +1,42 @@
+{
+  "entrypoint": [
+    "packages/catalog-service/src/server.ts"
+  ],
+  "configuration": [
+    "packages/catalog-service/.env",
+    "packages/catalog-service/package.json",
+    "packages/catalog-service/tsconfig.json",
+    "packages/catalog-service/tsup.config.ts"
+  ],
+  "infrastructure": [
+    "packages/catalog-service/Dockerfile",
+    "packages/catalog-service/docker-compose.dev.yml",
+    "packages/catalog-service/src/redis.ts"
+  ],
+  "routes": [
+    "packages/catalog-service/src/routes/adminProducts.ts",
+    "packages/catalog-service/src/routes/uploads.ts",
+    "packages/catalog-service/src/routes/products.ts"
+  ],
+  "handlers": [
+    "packages/catalog-service/src/handlers/adminProducts.ts",
+    "packages/catalog-service/src/handlers/products.ts"
+  ],
+  "services": [
+    "packages/catalog-service/src/services/uploadService.ts",
+    "packages/catalog-service/src/services/productService.ts",
+    "packages/catalog-service/src/services/adminProductService.ts"
+  ],
+  "middleware": [
+    "packages/catalog-service/src/middleware/authenticate.ts",
+    "packages/catalog-service/src/middleware/validateBody.ts",
+    "packages/catalog-service/src/middleware/authorize.ts"
+  ],
+  "utils": [
+    "packages/catalog-service/src/utils/asyncHandler.ts",
+    "packages/catalog-service/src/errors/AppError.ts"
+  ],
+  "types": [
+    "packages/catalog-service/src/types/express.d.ts"
+  ]
+}
