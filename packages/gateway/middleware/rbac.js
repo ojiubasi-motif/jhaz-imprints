@@ -30,8 +30,12 @@
  */
 const PERMISSIONS = {
   CUSTOMER: [
-    // Customers can browse products (public routes bypass auth, but included for defence-in-depth)
+    // Customers can browse the full catalogue — products, categories, fabrics.
+    // These are public routes (bypass JWT), but listed here for defence-in-depth:
+    // if a logged-in customer hits them, RBAC must not block with 403.
     { prefix: '/api/v1/products',          methods: ['GET'] },
+    { prefix: '/api/v1/categories',        methods: ['GET'] },  // catalogue filter list
+    { prefix: '/api/v1/fabrics',           methods: ['GET'] },  // fabric type filter list
     // Customers can register, login, manage their own profile
     { prefix: '/api/auth',                 methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     // Customers can place and view their own orders
@@ -40,13 +44,16 @@ const PERMISSIONS = {
   ADMIN: [
     // Admins have full access to all routes
     { prefix: '/api/v1/products',          methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+    { prefix: '/api/v1/categories',        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+    { prefix: '/api/v1/fabrics',           methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/v1/admin',             methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/auth',                 methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/orders',               methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
   ],
   TAILOR: [
-    // Tailors can browse products and view orders assigned to them
+    // Tailors can browse products, fabrics, and view orders assigned to them
     { prefix: '/api/v1/products',          methods: ['GET'] },
+    { prefix: '/api/v1/fabrics',           methods: ['GET'] },
     { prefix: '/api/v1/admin/products',    methods: ['GET'] },
     { prefix: '/api/orders',               methods: ['GET', 'PATCH'] }, // view + update status
     { prefix: '/api/auth',                 methods: ['GET', 'POST'] },

@@ -18,14 +18,22 @@
 
 import jwt from 'jsonwebtoken';
 
-// Routes that don't require a token.
+// Routes that don't require a JWT Bearer token.
 // Public product browsing is intentionally unauthenticated.
+// Webhook routes are secured by their own provider-specific signature, not JWT.
 const PUBLIC_ROUTES = [
-  { path: '/health',                   method: 'GET'  },
-  { path: '/api/v1/products',          method: 'GET'  },  // product listing
-  { path: '/api/v1/products/',         method: 'GET'  },  // trailing-slash variant
-  { path: '/api/auth/login',           method: 'POST' },
-  { path: '/api/auth/register',        method: 'POST' },
+  { path: '/health',                          method: 'GET'  },
+  { path: '/api/v1/products',                 method: 'GET'  },  // product listing
+  { path: '/api/v1/products/',                method: 'GET'  },  // trailing-slash variant
+  { path: '/api/v1/categories',               method: 'GET'  },  // categories listing
+  { path: '/api/v1/categories/',              method: 'GET'  },
+  { path: '/api/v1/fabrics',                  method: 'GET'  },  // fabrics listing
+  { path: '/api/v1/fabrics/',                 method: 'GET'  },
+  { path: '/api/auth/login',                  method: 'POST' },
+  { path: '/api/auth/register',               method: 'POST' },
+  { path: '/api/auth/refresh',                method: 'GET'  },  // refresh token uses its own mechanism
+  // ── Webhook routes — no JWT, secured by provider HMAC signature instead ──
+  { path: '/api/orders/webhook/paystack',     method: 'POST' },  // Paystack push events (HMAC-SHA512)
 ];
 
 /**

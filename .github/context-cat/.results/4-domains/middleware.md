@@ -3,34 +3,45 @@
 The `middleware` domain provides reusable Express middleware functions for cross-cutting concerns like authentication, authorization, and validation.
 
 ## Consistent Patterns
-- **Authentication**: JWT token verification is handled by `authenticate` which populates `req.user`.
+- **Authentication**: Gateway-centric verification. The `authenticate` middleware verifies that the incoming request has a valid `x-internal-secret` matching `INTERNAL_GATEWAY_SECRET` to prevent direct external bypass, and extracts pre-validated user identity from `x-user-id`, `x-user-role`, and `x-user-email` headers.
 - **Validation**: Zod schema validation is processed via a generic `validateBody` middleware.
-- **Failure Responses**: Middleware functions typically intercept the request and return standard JSON failure envelopes directly if conditions aren't met, rather than throwing to the global handler.
+- **Failure Responses**: Middleware functions typically intercept the request and return standard JSON failure envelopes directly if conditions aren't met (such as missing/invalid internal secret or missing user headers), rather than throwing to the global handler.
 
 ## Code Examples
 
 **Authentication (`src/middleware/authenticate.ts`):**
 ```typescript
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  try {
-    const authHeader = req.headers.authorization;
-    // ... token extraction ...
-    
-    const decoded = jwt.verify(token, secret);
-    
-    req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role,
-    };
-    next();
-  } catch (error) {
-    return res.status(401).json({
-      msg: "Unauthorized: Invalid or expired token",
+  const incomingSecret = req.headers["x-internal-secret"];
+
+  if (!INTERNAL_SECRET || incomingSecret !== INTERNAL_SECRET) {
+    return res.status(403).json({
+      msg: "Forbidden: Direct access to internal service is not permitted.",
       data: null,
-      type: "AUTHENTICATION_FAILED",
-      code: 602
+      type: "GATEWAY_BYPASS_DETECTED",
+      code: 403,
     });
   }
+
+  const userId    = req.headers["x-user-id"]    as string | undefined;
+  const userRole  = req.headers["x-user-role"]  as string | undefined;
+  const userEmail = req.headers["x-user-email"] as string | undefined;
+
+  if (!userId || !userRole) {
+    return res.status(401).json({
+      msg: "Unauthorized: Missing identity headers. Ensure the gateway is performing authentication.",
+      data: null,
+      type: "AUTHENTICATION_FAILED",
+      code: 401,
+    });
+  }
+
+  req.user = {
+    id:    userId,
+    email: userEmail ?? "",
+    role:  userRole as "CUSTOMER" | "ADMIN" | "TAILOR",
+  };
+
+  next();
 }
 ```

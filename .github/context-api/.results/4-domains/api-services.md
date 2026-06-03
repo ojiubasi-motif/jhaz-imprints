@@ -5,15 +5,15 @@
 - **Stateless Logic**: Services are typically static classes or exported async functions that take inputs and return data.
 - **Transactional Integrity**: Uses Prisma `$transaction` for operations requiring atomicity across multiple tables.
 - **Error Propagation**: Throws custom `AppError` instances with status codes and specific error codes.
-- **Cross-Database Orchestration**: Services often bridge data between MongoDB (catalog) and PostgreSQL (users/orders).
+- **Cached Database Orchestration**: Instead of querying MongoDB directly at runtime, the API service queries a local cache replica (`CachedProduct` in PostgreSQL) which is populated by Redis streams.
 
 ## Code Examples
 
 ### Transactional Service Pattern (with Defensive Validation & Order Snapshotting)
 ```typescript
 export async function createOrder(userId: string, input: CreateOrderInput) {
-  // 1. Fetch catalog context from MongoDB
-  const product = await productService.getProductByIdOrSlug(input.productId);
+  // 1. Fetch catalog context from PostgreSQL Cache
+  const product = await getCachedProductByIdOrSlug(input.productId);
   if (!product) throw new AppError("Product not found", 404);
 
   // 2. Defensive String Matching for options
@@ -21,10 +21,11 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
   const inputStyleSafe = (input.styleOptionName ?? "Standard").trim().toLowerCase();
 
   // 3. Resilient Fallback for options
-  let fabricOption = product.fabricOptions.find(
+  const fabricOptions = product.fabricOptions as Array<{ name: string; priceModifier: number }>;
+  let fabricOption = fabricOptions.find(
     (f) => f.name.trim().toLowerCase() === inputFabricSafe
   );
-  if (!fabricOption && product.fabricOptions.length === 0) {
+  if (!fabricOption && fabricOptions.length === 0) {
     fabricOption = { name: "Standard", priceModifier: 0 }; // Fallback
   }
 
@@ -54,19 +55,19 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
 }
 ```
 
-### Data Augmentation Pattern (Cross-Database)
-When fetching orders, services should bridge the relational order data with dynamic catalog data from MongoDB.
+### Data Augmentation Pattern (Cached Product Lookup)
+When fetching orders, services should bridge the relational order data with catalog data from the local `CachedProduct` replica.
 ```typescript
 export async function getOrderById(userId: string, orderId: string) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) throw new AppError("Order not found", 404);
 
-  // Augment with rich product data (images, full descriptions) from MongoDB
-  const mongoProduct = await productService.getProductByIdOrSlug(order.productId);
+  // Augment with rich product data from local SQL cache
+  const localProduct = await getCachedProductByIdOrSlug(order.productId);
   
   return {
     ...order,
-    product: mongoProduct || null,
+    product: localProduct || null,
   };
 }
 ```
@@ -148,7 +149,7 @@ Guidance:
 - Prefer `select` projections in service queries when the full model is not required by downstream logic.
 
 ### Parallel Order Augmentation (N+1 Prevention)
-When augmenting multiple orders with MongoDB data, use `Promise.all` to parallelize fetches. Always handle missing products gracefully with `try/catch` and fallback to `null`.
+When augmenting multiple orders, query the local database Cache. Always handle missing products gracefully with `try/catch` and fallback to `null`.
 ```typescript
 export async function getUserOrders(userId: string, skip = 0, take = 10) {
   const orders = await prisma.order.findMany({
@@ -163,7 +164,7 @@ export async function getUserOrders(userId: string, skip = 0, take = 10) {
     orders.map(async (order) => {
       let product = null;
       try {
-        product = await productService.getProductByIdOrSlug(order.productId);
+        product = await getCachedProductByIdOrSlug(order.productId);
       } catch {
         // Product may have been deleted; return order without product data
       }
@@ -172,31 +173,5 @@ export async function getUserOrders(userId: string, skip = 0, take = 10) {
   );
 
   return { orders: augmentedOrders, total: await prisma.order.count({ where: { userId } }), skip, take };
-}
-```
-
-### Admin Product Validation Pattern
-`adminProductService` enforces image requirements before calling `Product.create`. Converts Mongoose `ValidationError` into clear 400 `AppError` responses.
-```typescript
-export async function createProduct(input: CreateProductInput) {
-  if (!input.images || input.images.length === 0) {
-    throw new AppError("At least one product image is required. Upload via POST /api/v1/admin/uploads first.", 400, "IMAGES_REQUIRED");
-  }
-  const invalidImages = input.images.filter((url) => !url.startsWith("http"));
-  if (invalidImages.length > 0) {
-    throw new AppError("Invalid image URLs. Use the returned URLs from the upload endpoint.", 400, "INVALID_IMAGE_URL");
-  }
-  try {
-    const product = await Product.create(input);
-    return product.toObject();
-  } catch (error: any) {
-    if (error.name === "ValidationError" && error.errors) {
-      const messages = Object.entries(error.errors)
-        .map(([field, err]: [string, any]) => `${field}: ${err.message}`)
-        .join("; ");
-      throw new AppError(messages, 400, "VALIDATION_ERROR");
-    }
-    throw error;
-  }
 }
 ```

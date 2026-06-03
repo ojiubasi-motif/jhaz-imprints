@@ -71,6 +71,11 @@ export async function initializeDatabases() {
   }
 }
 
+import { verifyGatewayOrigin } from "./middleware/authenticate";
+
+// Mount gateway origin verification middleware globally
+app.use(verifyGatewayOrigin);
+
 // Routes
 app.use("/api/auth", authRouter);
 app.use("/api/orders", ordersRouter);

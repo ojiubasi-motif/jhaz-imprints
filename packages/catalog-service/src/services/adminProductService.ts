@@ -4,69 +4,94 @@
  */
 
 import { Product } from "@jhaz-imprints/catalog-db";
+import type { ICategoryRef } from "@jhaz-imprints/catalog-db";
+import type { CreateProduct, UpdateProduct } from "@jhaz-imprints/shared";
+import { getCategories } from "./categoryService";
+import { addImagesField } from "./productService";
 import { AppError } from "../errors/AppError";
 
-export interface CreateProductInput {
-  name: string;
-  slug?: string;
-  category: string;
-  description: string;
-  basePrice: number;
-  images: string[];
-  fabricOptions?: Array<{
-    name: string;
-    priceModifier: number;
-    swatchImageUrl: string;
-    inStock?: boolean;
-  }>;
-  colorOptions?: Array<{
-    name: string;
-    hexCode?: string;
-    imageUrl?: string;
-  }>;
-  styleOptions?: Array<{
-    name: string;
-    priceModifier: number;
-    previewImageUrl: string;
-    description?: string;
-  }>;
-  productionDays: number;
-  isActive?: boolean;
-  seoMeta: {
-    title: string;
-    description: string;
-    keywords?: string[];
-  };
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Validation helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Create a new product in the catalog.
- * Requires at least one uploaded image URL.
- */
-export async function createProduct(input: CreateProductInput) {
-  if (!input.images || input.images.length === 0) {
+function validateCategoryRefs(categories: ICategoryRef[]): void {
+  const validSlugs = new Set(getCategories().map((c) => c.slug));
+  const invalidSlugs = categories
+    .map((c) => c.slug)
+    .filter((slug) => !validSlugs.has(slug));
+
+  if (invalidSlugs.length > 0) {
     throw new AppError(
-      "At least one product image is required. Upload images via POST /api/v1/admin/uploads first.",
+      `Unknown category slugs: ${invalidSlugs.join(", ")}. ` +
+        `Valid slugs are: ${[...validSlugs].join(", ")}`,
       400,
-      "IMAGES_REQUIRED"
+      "INVALID_CATEGORY"
     );
   }
+}
 
-  // Validate that each image looks like a real URL
-  const invalidImages = input.images.filter((url) => !url.startsWith("http"));
+function validateFabricRefs(fabrics: string[]): void {
+  const invalid = fabrics.filter((id) => !/^[a-f\d]{24}$/i.test(id));
+  if (invalid.length > 0) {
+    throw new AppError(
+      `Invalid fabric ObjectId(s): ${invalid.join(", ")}`,
+      400,
+      "INVALID_FABRIC_ID"
+    );
+  }
+}
+
+function validateStyleOptions(styleOptions?: any[], defaultStyle?: string): void {
+  if (!styleOptions || styleOptions.length === 0) {
+    throw new AppError(
+      "At least one style option is required.",
+      400,
+      "STYLE_OPTIONS_REQUIRED"
+    );
+  }
+  const invalidImages = styleOptions.filter((style) => !style.imgUrl || !style.imgUrl.startsWith("https://"));
   if (invalidImages.length > 0) {
     throw new AppError(
-      "Invalid image URLs detected. Upload images via POST /api/v1/admin/uploads and use the returned URLs.",
+      "All style option image URLs must use HTTPS.",
       400,
       "INVALID_IMAGE_URL"
     );
   }
+  if (defaultStyle) {
+    const styleNames = styleOptions.map((style) => style.name);
+    if (!styleNames.includes(defaultStyle)) {
+      throw new AppError(
+        `Default style "${defaultStyle}" must be one of the provided style options: ${styleNames.join(", ")}`,
+        400,
+        "INVALID_DEFAULT_STYLE"
+      );
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRUD
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a new product in the catalog.
+ */
+export async function createProduct(input: CreateProduct) {
+  validateStyleOptions(input.styleOptions, input.defaultStyle);
+  validateCategoryRefs(input.categories as ICategoryRef[]);
+  validateFabricRefs(input.fabrics);
 
   try {
     const product = await Product.create(input);
-    return product.toObject();
+    return addImagesField(product.toObject());
   } catch (error: any) {
-    // Convert Mongoose validation errors to clear 400 responses
+    if (error.code === 11000) {
+      throw new AppError(
+        "A product with this slug already exists",
+        409,
+        "PRODUCT_SLUG_CONFLICT"
+      );
+    }
     if (error.name === "ValidationError" && error.errors) {
       const messages = Object.entries(error.errors)
         .map(([field, err]: [string, any]) => `${field}: ${err.message}`)
@@ -80,21 +105,35 @@ export async function createProduct(input: CreateProductInput) {
 /**
  * Update an existing product by ID.
  */
-export async function updateProduct(id: string, input: Partial<CreateProductInput>) {
+export async function updateProduct(id: string, input: UpdateProduct) {
+  if (input.styleOptions !== undefined || input.defaultStyle !== undefined) {
+    const existing = await Product.findById(id).lean();
+    if (!existing) {
+      throw new AppError("Product not found", 404, "PRODUCT_NOT_FOUND");
+    }
+    const mergedStyleOptions = input.styleOptions !== undefined ? input.styleOptions : (existing.styleOptions || []);
+    const mergedDefaultStyle = input.defaultStyle !== undefined ? input.defaultStyle : existing.defaultStyle;
+    validateStyleOptions(mergedStyleOptions as any[], mergedDefaultStyle);
+  }
+  if (input.categories) validateCategoryRefs(input.categories as ICategoryRef[]);
+  if (input.fabrics) validateFabricRefs(input.fabrics);
+
   const product = await Product.findByIdAndUpdate(id, input, {
     new: true,
     runValidators: true,
-  }).lean();
+  })
+    .lean()
+    .select("-__v");
 
   if (!product) {
     throw new AppError("Product not found", 404, "PRODUCT_NOT_FOUND");
   }
 
-  return product;
+  return addImagesField(product);
 }
 
 /**
- * Delete (hard delete) a product by ID.
+ * Hard-delete a product by ID.
  */
 export async function deleteProduct(id: string) {
   const product = await Product.findByIdAndDelete(id);

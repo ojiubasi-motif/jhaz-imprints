@@ -23,11 +23,11 @@
       "singleton-class": "Services should be implemented as static classes or exported functions.",
       "error-throwing": "Services should throw meaningful AppError (with message, status, and code) that handlers can catch.",
       "strict-string-matching": "Always use .trim().toLowerCase() when comparing input options (fabric, style) with database values.",
-      "lean-queries": "Use .lean() for all Mongoose read operations to ensure plain objects and better performance."
+      "local-cache-queries": "Query the local `CachedProduct` Prisma table for product options and details at runtime."
     },
     "architectural_constraints": {
-      "domain-isolation": "Services should focus on a single domain (e.g., AuthService, ProductService).",
-      "dual-database-orchestration": "When fetching related context from Mongoose (catalog), perform strict data extraction and pass into a single Prisma $transaction block for cross-system atomicity.",
+      "domain-isolation": "Services should focus on a single domain (e.g., AuthService, OrderService).",
+      "event-driven-replication": "Rely on Redis streams and `catalogEventWorker` to replicate MongoDB catalog changes to the local PostgreSQL `CachedProduct` table, avoiding direct cross-database queries at runtime.",
       "resilient-fallback": "Implement 'Standard' or 'Original' fallbacks for product options to prevent breaking orders when catalog configurations are missing modifiers."
     }
   },
@@ -47,9 +47,8 @@
   "data-persistence": {
     "required_patterns": {
       "prisma": "Use Prisma for user, auth, and relational data.",
-      "mongoose": "Use Mongoose for product catalog and document-based data.",
-      "order-snapshotting": "Save snapshots of product options and price modifiers in the relational Order model.",
-      "pagination": "Use mongoose-paginate-v2 for all paginated catalog queries."
+      "mongoose-replicated": "MongoDB is not queried at runtime; product catalog data is instead queried from CachedProduct in PostgreSQL, replicated via Redis stream catalog events.",
+      "order-snapshotting": "Save snapshots of product options and price modifiers in the relational Order model."
     },
     "architectural_constraints": {
       "external-packages": "Database logic must be imported from @jhaz-imprints/db or @jhaz-imprints/catalog-db."

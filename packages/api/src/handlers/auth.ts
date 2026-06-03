@@ -12,10 +12,13 @@ export const registerHandler = async (req: Request, res: Response) => {
     const { user, access_token, refresh_token } = await AuthService.register(validatedData);
     
     // Set HTTP-only cookie with Refresh Token (Named 'jwt' to match Quizio)
+    // In dev: secure=false (HTTP doesn't support Secure flag), sameSite=false (allows cross-origin POST)
+    // In prod: secure=true (HTTPS enforced), sameSite="none" (explicit cross-origin support)
     res.cookie("jwt", refresh_token, {
+      path: "/",
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Quizio uses None
+      sameSite: process.env.NODE_ENV === "production" ? "none" : false,
       maxAge: 30 * 60 * 1000, // 30m (matches refresh_token expiration)
     });
 
@@ -49,10 +52,13 @@ export const loginHandler = async (req: Request, res: Response) => {
     const { user, access_token, refresh_token } = await AuthService.login(validatedData);
     
     // Set HTTP-only cookie with Refresh Token (Named 'jwt' to match Quizio)
+    // In dev: secure=false (HTTP doesn't support Secure flag), sameSite=false (allows cross-origin POST)
+    // In prod: secure=true (HTTPS enforced), sameSite="none" (explicit cross-origin support)
     res.cookie("jwt", refresh_token, {
+      path: "/",
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Quizio uses None
+      sameSite: process.env.NODE_ENV === "production" ? "none" : false,
       maxAge: 30 * 60 * 1000, // 30m (matches refresh_token expiration)
     });
 
@@ -90,10 +96,13 @@ export const refreshHandler = async (req: Request, res: Response) => {
     const { user, access_token, refresh_token: new_refresh_token } = await AuthService.refresh(cookies.jwt);
 
     // Set new HTTP-only cookie (token rotation)
+    // In dev: secure=false (HTTP doesn't support Secure flag), sameSite=false (allows cross-origin POST)
+    // In prod: secure=true (HTTPS enforced), sameSite="none" (explicit cross-origin support)
     res.cookie("jwt", new_refresh_token, {
+      path: "/",
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : false,
       maxAge: 30 * 60 * 1000,
     });
 
@@ -124,9 +133,10 @@ export const logoutHandler = async (req: Request, res: Response) => {
   }
   
   res.clearCookie("jwt", {
+    path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : false,
   });
   res.status(200).json({ msg: "signout success", type: "SUCCESS", code: 600 });
 };

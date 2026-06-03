@@ -22,10 +22,12 @@ Use this file as the primary reference whenever you are:
 | Framework         | React 18 (functional components only)           |
 | Routing           | React Router DOM v7                             |
 | Styling           | Tailwind CSS v3 with custom design tokens       |
-| Data              | Supabase JS v2 (anon key, client-side)          |
+| Data (catalog)    | Supabase JS v2 (anon key, client-side)          |
+| Data (auth/API)   | REST API via `fetchApi()` in `src/lib/apiClient.ts` |
+| Auth state        | Redux Toolkit v2 (`@reduxjs/toolkit`) + React Redux |
 | Icons             | Lucide React                                    |
-| Build             | Vite v5                                         |
-| State Management  | React built-ins & Global Cart Context (`CartContext.tsx`) with `localStorage` persistence |
+| Build             | Vite v5 with `/api` dev proxy to `http://localhost:8080` |
+| State Management  | React built-ins & Global Cart Context (`CartContext.tsx`) with `localStorage` persistence; Redux Toolkit for authentication state only (`authSlice`) |
 
 **Domain:** African fashion e-commerce with made-to-order customisation, localized for the **Nigerian market** (prices in Naira ₦, shipping defaulted to Nigeria and Nigerian states).
 
@@ -52,9 +54,9 @@ See: [5-style-guides/react-components.md](./.results/5-style-guides/react-compon
 ---
 
 ### `page-components` — Feature Pages & Wizards
-**What it is:** Full pages with local state, global context integrations, data fetching, filtering, and complex step-wise wizard interactions.
+**What it is:** Full pages with local state, global context integrations, data fetching, filtering, and complex step-wise wizard interactions. Also includes auth pages that use Redux state.
 
-**Examples:** `src/pages/Catalog.tsx`, `src/pages/Order.tsx`
+**Examples:** `src/pages/Catalog.tsx`, `src/pages/Order.tsx`, `src/pages/Login.tsx`, `src/pages/Register.tsx`
 
 **Key conventions:**
 - TypeScript interfaces and constants declared at file top, before the export
@@ -66,20 +68,21 @@ See: [5-style-guides/react-components.md](./.results/5-style-guides/react-compon
 - Mobile drawer: conditional render of fixed overlay + side panel (z-40 backdrop, z-50 panel)
 - Multi-step wizards (e.g. `Order.tsx`) synchronize current steps with URL search parameters (e.g. `?step=5`) so navigation is shareable and browser back/forward buttons function correctly.
 - Inline sub-components (`StepCart`, `StepDelivery`, `FilterTag`, `ProductCard`) defined as named functions at the bottom of the page file.
+- **Auth pages** (`Login.tsx`, `Register.tsx`) read async state from Redux (`useAppSelector`) instead of local state. They use `dispatch(loginUser(...))` and check `.fulfilled.match(result)` for navigation. Local `formErrors` handles validation; Redux `error` handles API errors.
 
 See: [5-style-guides/page-components.md](./.results/5-style-guides/page-components.md)
 
 ---
 
-### `state-providers` — Global Context State
-**What it is:** React Context provider modules that share state across independent pages and nav shells.
+### `state-providers` — Global Context & Redux Store
+**What it is:** React Context provider modules and the Redux store that share state across independent pages and nav shells.
 
-**Examples:** `src/context/CartContext.tsx`
+**Examples:** `src/context/CartContext.tsx`, `src/store/index.ts`, `src/store/slices/authSlice.ts`
 
 **Key conventions:**
-- Export a wrapper provider component `<CartProvider>` and a hooks consumer `useCart()`
-- Automatically synchronize and persist state in `localStorage` inside React effects
-- Define and export interfaces representing state structures (e.g., `CartItem`, `Measurements`, `Personalization`) at the top of the provider file to act as the source of truth
+- **Cart context** (`CartContext.tsx`): Export `<CartProvider>` and `useCart()`. Persist state in `localStorage` via React effects.
+- **Auth Redux** (`src/store/`): Configured in `index.ts`, typed hooks in `hooks.ts`, auth logic in `slices/authSlice.ts`. Always consume via `useAppDispatch()` and `useAppSelector()`.
+- Define and export interfaces representing state structures (e.g., `CartItem`, `AuthState`, `User`) at the top of the provider/slice file as the source of truth.
 
 ---
 
@@ -102,12 +105,14 @@ See: [5-style-guides/hooks.md](./.results/5-style-guides/hooks.md)
 ### `lib-utilities` — Infrastructure & Formatting Helpers
 **What it is:** Thin adapter modules for external services and shared functional helpers.
 
-**Examples:** `src/lib/supabase.ts`, `src/lib/utils.ts`
+**Examples:** `src/lib/supabase.ts`, `src/lib/apiClient.ts`, `src/lib/tokenStore.ts`, `src/lib/utils.ts`
 
 **Key conventions:**
 - Export a single initialized singleton (e.g. `supabase`) — never instantiate in components
 - Credentials always from `import.meta.env.VITE_*`
 - Shared formatting logic (like currency rendering via `formatNaira()` or raw pricing multiplier conversions using `convertPrice()`) must reside in `utils.ts` to ensure consistency
+- **Always call `fetchApi(endpoint, options?)` from `apiClient.ts`** for all REST API calls — never use `fetch()` directly; `fetchApi` handles auth token attachment, proactive refresh, and 401 handling
+- **Always use `tokenStore`** for access token storage — never `localStorage`/`sessionStorage`
 - Keep `lib/` for adapters and pure utility helpers only — no custom business workflows
 
 See: [5-style-guides/lib-utilities.md](./.results/5-style-guides/lib-utilities.md)
@@ -193,7 +198,12 @@ export default function MySection() {
 | ❌ No server-side filtering | All catalog filtering is client-side via `useMemo` |
 | ❌ No re-instantiating supabase client | Always import from `../lib/supabase` |
 | ❌ No animations without `useInView` | Sections that animate must use the hook |
+| ❌ No raw `fetch()` for API calls | Always use `fetchApi()` from `src/lib/apiClient.ts` — bypassing it loses auth token injection and 401 handling |
+| ❌ No access tokens in `localStorage` | Access tokens are stored only in `tokenStore` (in-memory); refresh tokens live in httpOnly cookies |
+| ❌ No direct auth state in components | Auth async state (`isLoading`, `error`, `user`) comes from Redux via `useAppSelector` only |
 | ✅ All routes declared in `App.tsx` | Do not scatter route definitions |
 | ✅ All pages in `src/pages/` | Section components go in `src/components/` |
 | ✅ Scroll resets on navigation | Wrap routes or include `ScrollToTop` helper in `App.tsx` to automatically scroll to top on routing |
 | ✅ All navigation links updated in `Navbar.tsx` | Keep `navLinks` as the single source of truth |
+| ✅ `<Provider store={store}>` wraps everything | Redux `Provider` is the outermost wrapper in `App.tsx`, followed by `<AuthInitializer>` |
+| ✅ Auth page redirects preserve destination | Always pass `?redirect=<path>` when sending users to `/login` or `/register` |

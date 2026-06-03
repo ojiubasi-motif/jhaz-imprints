@@ -35,7 +35,9 @@
   },
   "proxying": {
     "required_patterns": {
-      "header-sanitization": "Strip incoming request headers like `host` and `content-length` to let the destination and proxy engine rebuild them.",
+      "header-sanitization": "Strip incoming request headers like `host`, `content-length`, and `authorization` to isolate downstream services from direct JWT access.",
+      "identity-forwarding": "Inject pre-validated user identity headers (`x-user-id`, `x-user-role`, `x-user-email`) from `req.user`.",
+      "internal-secret-injection": "Inject a shared `x-internal-secret` (from `INTERNAL_GATEWAY_SECRET`) to let microservices confirm requests originated from the gateway.",
       "verbatim-response": "Use `parse_response: false` on `needle` to stream/send raw response bodies and status codes verbatim to the client."
     },
     "architectural_constraints": {

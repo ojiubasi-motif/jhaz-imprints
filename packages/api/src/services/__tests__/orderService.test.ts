@@ -15,50 +15,63 @@ import { PrismaClient } from "@jhaz-imprints/db";
 
 // Mock MongoDB Product model so tests don't need a real Atlas connection.
 // Must be declared BEFORE importing orderService (which imports catalog-db).
-vi.mock("@jhaz-imprints/catalog-db", () => ({
-  connectMongoDB: vi.fn().mockResolvedValue(undefined),
-  Product: {
-    findById: vi.fn().mockReturnValue({
-      lean: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue({
-          _id: "test-product-id",
-          name: "Traditional Wedding Aso-oke",
-          basePrice: 50000,
-          fabricOptions: [
-            { name: "Premium Aso-oke", priceModifier: 10000 },
-            { name: "Standard Aso-oke", priceModifier: 0 },
-          ],
-          styleOptions: [
-            { name: "Modern Elegant", priceModifier: 5000 },
-            { name: "Classic Cut", priceModifier: 0 },
+vi.mock("@jhaz-imprints/catalog-db", () => {
+  const mockProduct = {
+    _id: "test-product-id",
+    name: "Traditional Wedding Aso-oke",
+    basePrice: 50000,
+    fabricOptions: [
+      { name: "Premium Aso-oke", priceModifier: 10000 },
+      { name: "Standard Aso-oke", priceModifier: 0 },
+    ],
+    styleOptions: [
+      { name: "Modern Elegant", priceModifier: 5000 },
+      { name: "Classic Cut", priceModifier: 0 },
+    ],
+  };
+
+  return {
+    connectMongoDB: vi.fn().mockResolvedValue(undefined),
+    Product: {
+      findById: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          ...mockProduct,
+          select: vi.fn().mockResolvedValue(mockProduct),
+        }),
+      }),
+      findOne: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          ...mockProduct,
+          select: vi.fn().mockResolvedValue(mockProduct),
+        }),
+      }),
+      find: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue([]),
+      }),
+    },
+    Fabric: {
+      findById: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue({
+          _id: "64f123456789abcdef999999",
+          name: "Premium Silk",
+          slug: "premium-silk",
+          properties: [
+            {
+              colorName: "Gold",
+              colorCode: "#D4A017",
+              imageUrl: "https://mock.com/gold.jpg",
+              unit: "trouser-length",
+              yardsPerUnit: 1.5,
+              priceModifier: 15000,
+              inStock: true,
+              isActive: true,
+            },
           ],
         }),
       }),
-    }),
-    findOne: vi.fn().mockReturnValue({
-      lean: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue({
-          _id: "test-product-id",
-          name: "Traditional Wedding Aso-oke",
-          basePrice: 50000,
-          fabricOptions: [
-            { name: "Premium Aso-oke", priceModifier: 10000 },
-            { name: "Standard Aso-oke", priceModifier: 0 },
-          ],
-          styleOptions: [
-            { name: "Modern Elegant", priceModifier: 5000 },
-            { name: "Classic Cut", priceModifier: 0 },
-          ],
-        }),
-      }),
-    }),
-    find: vi.fn().mockReturnValue({
-      lean: vi.fn().mockReturnValue({
-        select: vi.fn().mockResolvedValue([]),
-      }),
-    }),
-  },
-}));
+    },
+  };
+});
 
 vi.mock("../paystackService", () => ({
   initializePayment: vi.fn().mockResolvedValue({
@@ -75,7 +88,7 @@ vi.mock("../paystackService", () => ({
 }));
 
 // Import after mocks are set up
-import { confirmPayment, createOrder } from "../orderService";
+import { confirmPayment, createOrder, getUserMeasurements, createMeasurement, updateMeasurement } from "../orderService";
 import { computeOrderTotal } from "../pricingEngine";
 
 describe("orderService — Integration Tests", () => {
@@ -123,29 +136,27 @@ describe("orderService — Integration Tests", () => {
         },
       });
 
-      // FIX: schema fields are chest/armLength/length — not bust/sleeveLen/height
-      const measurement = await prisma.measurement.create({
-        data: {
-          userId: user.id,
-          chest: 90,
-          waist: 70,
-          hip: 95,
-          shoulder: 40,
-          armLength: 60,
-          length: 170,
-        },
-      });
-
-      // FIX: schema uses totalAmount — not totalPrice.
-      // productId, fabricOptionId, styleOptionId, colorOptionId, quantity DO NOT exist in schema.
+      // Measurement is now embedded inline in each item — no separate row needed.
       const order = await prisma.order.create({
         data: {
           userId: user.id,
-          measurementId: measurement.id,
-          productId: "test-product-id",
-          styleOptionName: "Modern Elegant",
-          fabricOptionName: "Premium Aso-oke",
-          totalAmount: 50000,
+          items: [
+            {
+              productId: "test-product-id-111111111111",
+              productName: "Traditional Wedding Aso-oke",
+              measurement: { chest: 90, waist: 70, hip: 95, shoulder: 40, armLength: 60, length: 170 },
+              fabricId: null,
+              fabricOptionName: "Premium Aso-oke",
+              styleOptionName: "Modern Elegant",
+              colorName: null,
+              basePrice: 50000,
+              styleModifier: 5000,
+              fabricModifier: 10000,
+              totalAmount: 65000,
+              notes: null,
+            },
+          ],
+          totalAmount: 65000,
           status: "PENDING",
         },
       });
@@ -204,26 +215,26 @@ describe("orderService — Integration Tests", () => {
         },
       });
 
-      const measurement = await prisma.measurement.create({
-        data: {
-          userId: user.id,
-          chest: 90,
-          waist: 70,
-          hip: 95,
-          shoulder: 40,
-          armLength: 60,
-          length: 170,
-        },
-      });
-
       const order = await prisma.order.create({
         data: {
           userId: user.id,
-          measurementId: measurement.id,
-          productId: "test-product-id",
-          styleOptionName: "Modern Elegant",
-          fabricOptionName: "Standard Aso-oke",
-          totalAmount: 50000,
+          items: [
+            {
+              productId: "test-product-id-111111111111",
+              productName: "Traditional Wedding Aso-oke",
+              measurement: { chest: 90, waist: 70, hip: 95, shoulder: 40, armLength: 60, length: 170 },
+              fabricId: null,
+              fabricOptionName: "Standard Aso-oke",
+              styleOptionName: "Modern Elegant",
+              colorName: null,
+              basePrice: 50000,
+              styleModifier: 5000,
+              fabricModifier: 0,
+              totalAmount: 55000,
+              notes: null,
+            },
+          ],
+          totalAmount: 55000,
           status: "PENDING",
         },
       });
@@ -275,25 +286,25 @@ describe("orderService — Integration Tests", () => {
         },
       });
 
-      const measurement = await prisma.measurement.create({
-        data: {
-          userId: user.id,
-          chest: 90,
-          waist: 70,
-          hip: 95,
-          shoulder: 40,
-          armLength: 60,
-          length: 170,
-        },
-      });
-
       const order = await prisma.order.create({
         data: {
           userId: user.id,
-          measurementId: measurement.id,
-          productId: "test-product-id",
-          styleOptionName: "Classic Cut",
-          fabricOptionName: "Standard Aso-oke",
+          items: [
+            {
+              productId: "test-product-id-111111111111",
+              productName: "Traditional Wedding Aso-oke",
+              measurement: { chest: 90, waist: 70, hip: 95, shoulder: 40, armLength: 60, length: 170 },
+              fabricId: null,
+              fabricOptionName: "Standard Aso-oke",
+              styleOptionName: "Classic Cut",
+              colorName: null,
+              basePrice: 50000,
+              styleModifier: 0,
+              fabricModifier: 0,
+              totalAmount: 50000,
+              notes: null,
+            },
+          ],
           totalAmount: 50000,
           status: "PENDING",
         },
@@ -344,6 +355,166 @@ describe("orderService — Integration Tests", () => {
         stylePriceModifier: 5000,
       });
       expect(total).toBe(65000);
+    });
+
+    it("should calculate grand total correctly with delivery and promoCode JHAZ10", async () => {
+      const user = await prisma.user.create({
+        data: {
+          email: "test3@example.com",
+          firstName: "Pricing",
+          lastName: "Tester",
+          phone: "+1234567800",
+          role: "CUSTOMER",
+          password: "hashed_password",
+        },
+      });
+
+      const orderResult = await createOrder(user.id, {
+        items: [
+          {
+            productId: "64f123456789abcdef123456",
+            measurement: { chest: 90, waist: 70, hip: 95, shoulder: 40, armLength: 60, length: 170 },
+            styleOptionName: "Modern Elegant",
+          },
+        ],
+        promoCode: "JHAZ10",
+        delivery: {
+          fullName: "Recipient Name",
+          phoneNumber: "+12345678",
+          address: "123 Street",
+          city: "Lagos",
+          state: "Lagos",
+          country: "Nigeria",
+          deliveryMethod: "express",
+        },
+      });
+
+      // Product base: 50000. Style modifier: 5000. Items subtotal = 55000.
+      // Delivery fee: 7500. Sum = 62500.
+      // Discount = 62500 * 0.1 = 6250.
+      // Expected grand total = 56250.
+      expect(orderResult.order.totalAmount).toBe(56250);
+      expect(orderResult.payment.amount).toBe(56250);
+      expect(orderResult.order.notes).toBeDefined();
+
+      const parsedMeta = JSON.parse(orderResult.order.notes as string);
+      expect(parsedMeta.promoCode).toBe("JHAZ10");
+      expect(parsedMeta.delivery.deliveryMethod).toBe("express");
+    });
+
+    it("should calculate fabric modifier price accounting for quantity needed as calculated by the measurement formula", async () => {
+      const user = await prisma.user.create({
+        data: {
+          email: "test3@example.com",
+          firstName: "FabricPricing",
+          lastName: "Tester",
+          phone: "+1234567801",
+          role: "CUSTOMER",
+          password: "hashed_password",
+        },
+      });
+
+      const orderResult = await createOrder(user.id, {
+        items: [
+          {
+            productId: "64f123456789abcdef123456",
+            // This measurement layout calculation leads to 4.04 yards:
+            // flatWidth = Max(90, 95) / 2 + 15 = 62.5 cm. flatWidth * 2 = 125 > 115 fabricWidth, so numLengths = 2.
+            // garmentLength = 170 * 0.85 = 144.5 cm. sleeveLength = 40 * 1.5 = 60 cm.
+            // totalLengthCm = 144.5 * 2 + 60 + 20 = 369 cm. yards = 369 / 91.44 = 4.035 -> 4.04 yards.
+            measurement: { chest: 90, waist: 70, hip: 95, shoulder: 40, armLength: 60, length: 170 },
+            styleOptionName: "Modern Elegant", // +5000 style modifier
+            fabricId: "64f123456789abcdef999999::Gold", // priceModifier = 15000, yardsPerUnit = 1.5
+          },
+        ],
+        promoCode: "JHAZ10",
+        delivery: {
+          fullName: "Recipient Name",
+          phoneNumber: "+12345678",
+          address: "123 Street",
+          city: "Lagos",
+          state: "Lagos",
+          country: "Nigeria",
+          deliveryMethod: "express", // +7500 fee
+        },
+      });
+
+      // Verification calculations:
+      // Product base: 50000.
+      // Style modifier: 5000.
+      // Fabric yards needed: 4.04 yards.
+      // Units needed: Math.ceil(4.04 / 1.5) = 3 units.
+      // Fabric modifier: 15000 * 3 = 45000.
+      // Items subtotal: 50000 + 5000 + 45000 = 100000.
+      // Delivery fee: 7500. Sum = 107500.
+      // Discount = 107500 * 0.1 = 10750.
+      // Expected grand total = 107500 - 10750 = 96750.
+      expect(orderResult.order.totalAmount).toBe(96750);
+      expect(orderResult.payment.amount).toBe(96750);
+      
+      const orderItem = (orderResult.order.items as any[])[0];
+      expect(orderItem.fabricModifier).toBe(45000);
+      expect(orderItem.fabricQty).toBe(3);
+      expect(orderItem.fabricYards).toBe(4.04);
+      expect(orderItem.yardsPerUnit).toBe(1.5);
+    });
+  });
+
+  describe("Measurement Profiles", () => {
+    it("should allow a user to save up to 2 profiles and fail on the 3rd, and allow updating existing profiles", async () => {
+      const user = await prisma.user.create({
+        data: {
+          email: "test3@example.com",
+          firstName: "Measure",
+          lastName: "Tester",
+          phone: "+1234567899",
+          role: "CUSTOMER",
+          password: "hashed_password",
+        },
+      });
+
+      // 1. Create first profile
+      const p1 = await createMeasurement(user.id, {
+        profileName: "Profile 1",
+        isDefault: true,
+        chest: 90,
+        waist: 75,
+      });
+      expect(p1.id).toBeDefined();
+      expect(p1.profileName).toBe("Profile 1");
+
+      // 2. Create second profile
+      const p2 = await createMeasurement(user.id, {
+        profileName: "Profile 2",
+        isDefault: false,
+        chest: 95,
+        waist: 80,
+      });
+      expect(p2.id).toBeDefined();
+      expect(p2.profileName).toBe("Profile 2");
+
+      // 3. Create third profile - should throw AppError
+      await expect(
+        createMeasurement(user.id, {
+          profileName: "Profile 3",
+          isDefault: false,
+          chest: 100,
+        })
+      ).rejects.toThrow("You cannot save more than 2 measurement profiles");
+
+      // 4. Get measurements
+      const list = await getUserMeasurements(user.id);
+      expect(list).toHaveLength(2);
+
+      // 5. Update first profile
+      const updated = await updateMeasurement(user.id, p1.id, {
+        profileName: "Profile 1 Updated",
+        isDefault: true,
+        chest: 92,
+        waist: 77,
+      });
+      expect(updated.profileName).toBe("Profile 1 Updated");
+      expect(updated.chest).toBe(92);
     });
   });
 });

@@ -14,36 +14,42 @@
 //   7. router            → resolves SERVICE_MAP, sets req.proxyDestination, proxies.
 
 import 'dotenv/config';
-import express    from 'express';
-import cors       from 'cors';
-import rateLimit  from 'express-rate-limit';
+import express from 'express';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 
-import requestLogger     from './middleware/logger.js';
+import requestLogger from './middleware/logger.js';
 import authenticateToken from './middleware/auth.js';
-import authorise         from './middleware/rbac.js';
-import router            from './routes/index.js';
+import authorise from './middleware/rbac.js';
+import router from './routes/index.js';
 
 const PORT = process.env.GATEWAY_PORT || 8080;
-const app  = express();
+const app = express();
 
 // ─── Rate Limiter ─────────────────────────────────────────────────────────────
 // Protects the gateway from brute-force and DoS attacks.
 // 200 req / 15 min per IP — adjust for production requirements.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit:    200,
-  message:  {
-    error:   'RATE_LIMITED',
+  limit: 200,
+  message: {
+    error: 'RATE_LIMITED',
     message: 'Too many requests from this IP. Please try again in 15 minutes.',
   },
   standardHeaders: 'draft-8',
-  legacyHeaders:   false,
+  legacyHeaders: false,
 });
 
 // ─── Global Middleware ────────────────────────────────────────────────────────
 app.use(requestLogger);      // (1) attach timer + log on response
-app.use(cors({               // (2) CORS — open for now; tighten in production
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+
+// (2) CORS configuration — trim whitespace from origins list
+const corsOrigin = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : true;  // Allow any origin if not configured
+
+app.use(cors({
+  origin: corsOrigin,
   credentials: true,
 }));
 app.use(express.json());     // (3) parse JSON bodies
@@ -62,7 +68,7 @@ app.use(router);             // (7) resolve SERVICE_MAP and proxy to downstream
 app.use((err, req, res, _next) => {
   console.error('[Gateway Error]', err);
   res.status(500).json({
-    error:   'INTERNAL_ERROR',
+    error: 'INTERNAL_ERROR',
     message: 'An unexpected error occurred in the gateway.',
   });
 });

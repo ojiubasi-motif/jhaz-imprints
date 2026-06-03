@@ -1,4 +1,7 @@
 import mongoose, { Connection } from "mongoose";
+import dns from "dns";
+
+dns.setDefaultResultOrder("ipv4first");
 
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/jhaz-imprints";
 const MAX_RETRIES = 5;

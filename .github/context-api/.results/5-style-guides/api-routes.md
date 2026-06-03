@@ -4,7 +4,7 @@
 
 - **Modularity**: Use `express.Router()` for each domain.
 - **Middleware Integration**: Apply `authenticate` and `authorize` middleware at the route level.
-- **RESTful naming**: Use plural nouns for resources (e.g., `/products`, `/orders`).
+- **RESTful naming**: Use plural nouns for resources (e.g., `/orders`).
 - **Error Handling**: Wrap all route handlers in `asyncHandler` to catch asynchronous errors.
 - **Validation**: Use `validateBody` middleware to enforce schema constraints on incoming requests.
 
@@ -27,4 +27,4 @@ export default router;
 ```
 
 ## Naming Conventions
-- Files: `camelCase.ts` matching the domain (e.g., `adminProducts.ts`).
+- Files: `camelCase.ts` matching the domain (e.g., `orders.ts`).

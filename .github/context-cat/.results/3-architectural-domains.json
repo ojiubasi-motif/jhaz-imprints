@@ -4,20 +4,24 @@
       "route-definitions": "Use Express Router. Routes are defined in the `src/routes/` directory."
     },
     "architectural_constraints": {
-      "route-mounting": "All routers must be mounted in `src/server.ts` under the `/api/v1/...` path structure."
+      "route-mounting": "All routers must be mounted in `src/server.ts` under the `/api/v1/...` path structure. Public routes (e.g. categories, fabrics, products) go under `/api/v1/{resource}`. Admin routes go under `/api/v1/admin/{resource}`."
     }
   },
   "controllers-handlers": {
     "required_patterns": {
-      "async-error-handling": "Wrap all asynchronous route handlers in `asyncHandler` (from `src/utils/asyncHandler.ts`) to automatically pass errors to Express."
+      "async-error-handling": "Wrap all asynchronous route handlers in `asyncHandler` (from `src/utils/asyncHandler.ts`) to automatically pass errors to Express.",
+      "sync-handlers-allowed": "Synchronous handlers (e.g. `getCategoriesHandler`) may also be wrapped in `asyncHandler` for consistency, even though they do not strictly require it."
     },
     "architectural_constraints": {
-      "separation-of-concerns": "Handlers must only extract `req` data, invoke `services`, and format `res` output. No complex business logic."
+      "separation-of-concerns": "Handlers must only extract `req` data, invoke `services`, and format `res` output. No complex business logic.",
+      "combined-handler-files": "When a resource has both public and admin handlers (e.g. categories), they may coexist in a single handler file with clear section comments separating public vs admin functions."
     }
   },
   "services": {
     "required_patterns": {
-      "business-logic": "Encapsulate core business logic, database queries, and third-party API interactions (e.g., Cloudinary) in `src/services/`."
+      "business-logic": "Encapsulate core business logic, database queries, and third-party API interactions (e.g., Cloudinary) in `src/services/`.",
+      "admin-service-split": "Admin write operations (create/update/delete) live in dedicated `admin*Service.ts` files, separate from public read services.",
+      "category-file-io": "Category CRUD is performed via atomic read-modify-write operations on a static JSON file (`categories.json`), NOT a MongoDB collection."
     },
     "architectural_constraints": {
       "http-agnostic": "Services must not directly interact with Express `req` or `res` objects. They should throw custom `AppError` on failure."
@@ -34,10 +38,14 @@
   },
   "data-layer": {
     "required_patterns": {
-      "mongodb-models": "Import and use Mongoose models (like `Product`) and connection utilities directly from the workspace package `@jhaz-imprints/catalog-db`."
+      "mongodb-models": "Import and use Mongoose models (`Product`, `Fabric`) and connection utilities from the workspace package `@jhaz-imprints/catalog-db`.",
+      "fabric-collection": "Fabrics are a standalone MongoDB collection. Products reference fabrics via `ObjectId[]` (not embedded documents). Use `.populate('fabrics')` when full fabric detail is needed (e.g. single-product responses).",
+      "category-json": "Categories are stored in a static JSON file at `packages/catalog-db/src/data/categories.json`. Products embed slim `{name, slug}` category references. The JSON file is the single source of truth and is managed via the `categoryService`.",
+      "product-references": "Products use `categories: [{name, slug}]` (embedded refs from JSON) and `fabrics: [ObjectId]` (DB refs to Fabric collection). Products also have `gender`, `occasion` enum fields, a `defaultStyle` string field, and `styleOptions` (where each style option has an `imgUrl` associated with it)."
     },
     "architectural_constraints": {
-      "no-prisma": "This microservice uses MongoDB via Mongoose. Prisma (which is used elsewhere in the monorepo) is strictly forbidden here."
+      "no-prisma": "This microservice uses MongoDB via Mongoose. Prisma (which is used elsewhere in the monorepo) is strictly forbidden here.",
+      "lean-queries": "All MongoDB queries must use `.lean()` for serialization safety."
     }
   },
   "error-handling": {

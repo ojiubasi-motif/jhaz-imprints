@@ -78,3 +78,90 @@ The mobile filter drawer is a conditional render of a fixed overlay + panel, not
 
 ### 8. Step Wizards Synced to Search Parameters
 Multi-step forms (like the customizer flow in `Order.tsx`) synchronize the active step step-indicator state with the URL search parameters using `useSearchParams`. The active step state is derived directly from the URL (e.g., `/order?step=5`), ensuring that refreshing the page, using browser back/forward buttons, or deep-linking to the cart functions reliably.
+
+### 9. Cart Page Mirrors Order Constants for Consistency
+The standalone `Cart.tsx` page mirrors all data constants from `Order.tsx` to ensure price calculations remain in sync:
+- `OUTFIT_STYLES` with basePrice for each outfit type
+- `FABRIC_PRESETS` with upgrade prices
+- `CUSTOMIZATION_PRICES` with embroidery, lining, and accessories costs
+- Uses `formatNaira()` helper for all price displays (matching Order wizard Step 5)
+
+### 10. Item Removal Uses Array Filtering With State Update
+Removing items from the cart in `Cart.tsx` uses `.filter()` and immediately syncs to localStorage:
+```typescript
+const removeItem = useCallback((id: string) => {
+  const updated = cartItems.filter(item => item.id !== id);
+  setCartItems(updated);
+  saveCart(updated);  // sync to localStorage
+}, []);
+```
+
+### 11. Cart Summary Sidebar Breaks Down All Components
+The order summary shows:
+- Per-item breakdown (name, customizations, price)
+- Items subtotal
+- Delivery note (e.g., "Calculated at checkout")
+- Total (excluding delivery)
+- Trust badges (Secure Checkout, Handcrafted, Tracked)
+
+### 12. Category Pre-Filtering via URL Params
+When navigating from home page (e.g., "Shop Now" on a category tile), Catalog.tsx reads `?category=...` from the URL via `useSearchParams()` and automatically applies matching filters on mount:
+```typescript
+const { category } = Object.fromEntries(searchParams);
+if (category) {
+  setFilters(prev => ({
+    ...prev,
+    category: HOMEPAGE_CATEGORY_MAP[category] || []
+  }));
+}
+```
+
+### 13. Product Pre-Selection via URL Param
+When navigating from a product card (e.g., "Customize & Order" button), Order.tsx reads `?product=...` from URL and:
+1. Pre-selects that outfit in Step 1
+2. Automatically advances through initial steps if coming from home page
+3. Maintains multi-step wizard experience
+
+### 14. Auth-Aware Pages Use Redux, Not Local State
+`Login.tsx` and `Register.tsx` integrate with the Redux auth slice rather than managing async state locally. The consistent pattern:
+```typescript
+// 1. Read from Redux store (not useState)
+const { isLoading, error, user } = useAppSelector((state) => state.auth);
+const dispatch = useAppDispatch();
+
+// 2. Redirect if already authenticated
+useEffect(() => {
+  if (user) navigate(redirect);
+}, [user, navigate, redirect]);
+
+// 3. Clear stale errors on mount
+useEffect(() => {
+  dispatch(clearError());
+}, [dispatch]);
+
+// 4. Read redirect target from search params
+const [searchParams] = useSearchParams();
+const redirect = searchParams.get('redirect') || '/';
+
+// 5. Dispatch thunk on submit, navigate on fulfilled
+const result = await dispatch(loginUser({ email, password }));
+if (loginUser.fulfilled.match(result)) navigate(redirect);
+```
+
+### 15. Form Validation Is Local — API Errors Are From Redux
+Auth pages use a two-layer error system:
+- **Local `formErrors`** — client-side validation before submission (`useState<Record<string, string>>({})`)
+- **Redux `error`** — server error message from a rejected async thunk, displayed as an alert banner
+
+```typescript
+const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+const validate = () => {
+  const errors: Record<string, string> = {};
+  if (!email) errors.email = 'Email is required';
+  setFormErrors(errors);
+  return Object.keys(errors).length === 0;
+};
+```
+
+Error UI convention: redux error shown in an `AlertCircle` banner at the top of the form with `bg-terra-50 border-terra-100 text-terra-800` styling. Field errors shown as `text-xs text-red-500` below the input with `border-red-400` on the input itself.

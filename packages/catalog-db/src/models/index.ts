@@ -1,3 +1,14 @@
 // Re-export all models and types
 export { Product } from "./Product.model";
-export type { IProduct, IFabricOption, IColorOption, IStyleOption, ISeoMeta } from "./types";
+export { Fabric } from "./Fabric.model";
+export type {
+  IProduct,
+  IFabric,
+  IFabricProperty,
+  ICategoryRef,
+  IStyleOption,
+  ISeoMeta,
+  FabricUnit,
+  Gender,
+  Occasion,
+} from "./types";

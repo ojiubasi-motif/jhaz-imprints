@@ -13,19 +13,24 @@
 - **React Router DOM v7** — client-side routing via `BrowserRouter` + `<Routes>` / `<Route>` in `main.tsx` / `App.tsx`
 - **Tailwind CSS v3.4** — utility-first styling extended with a custom design system (color palettes, fonts, animations, keyframes)
 - **Supabase JS v2** (`@supabase/supabase-js`) — BaaS for real-time database access (products table)
+- **Redux Toolkit v2** (`@reduxjs/toolkit`) + **React Redux** — used exclusively for authentication state (`authSlice`)
 - **Lucide React v0.344** — icon library used universally across all components
-- **Vite v5.4** — build tool / dev server (`vite.config.ts`)
+- **Vite v5.4** — build tool / dev server (`vite.config.ts`) with a dev proxy (`/api` → `http://localhost:8080`)
 - **PostCSS + Autoprefixer** — CSS preprocessing pipeline
 
 ### State Management Approach
 - **Local React state & Global React Context** — `useState`, `useMemo`, `useCallback` from React core.
-- **Global Cart Context** (`CartContext.tsx`) wraps the app to share shopping cart state globally (e.g. Navbar item count badge, Order wizard steps) and automatically syncs it to `localStorage` (`jhaz_cart`).
-- No external state management libraries (no Redux, Zustand, Jotai, etc.)
-- Shared data is either passed as props, declared as module-level constants, or accessed via global React Context.
+- **localStorage Integration** — Shopping cart items persisted in `localStorage` (key: `jhaz_cart`); synchronized across pages via custom `jhaz-cart-updated` event; decoupled from Context (allows direct localStorage reads in multiple pages)
+- **Order Wizard State** — Managed locally within `Order.tsx` component; multi-item cart stored in state and synchronized to localStorage; wizard steps accessible via URL search params (`?step=N`)
+- **Redux Toolkit (auth only)** — `@reduxjs/toolkit` used for authentication global state (`src/store/slices/authSlice.ts`). The store is configured in `src/store/index.ts` and provided via `<Provider>` in `App.tsx`. Typed dispatch and selector hooks (`useAppDispatch`, `useAppSelector`) are exported from `src/store/hooks.ts`.
+- **In-Memory Token Store** — Access tokens are stored in a module-level variable in `src/lib/tokenStore.ts` (never in `localStorage`). The refresh token lives in an httpOnly cookie managed by the server.
+- Shared data is either passed as props, declared as module-level constants, accessed via localStorage and custom events, or (for auth) managed in Redux.
 
 ### Other Relevant Technologies / Patterns
 - **Intersection Observer API** — wrapped in a custom `useInView` hook for scroll-triggered animations
-- **Environment Variables** — Supabase credentials via `import.meta.env.VITE_*` (Vite-style)
+- **Environment Variables** — Supabase credentials via `import.meta.env.VITE_*` (Vite-style); `VITE_API_URL` for gateway (defaults to `/api` via Vite proxy in dev)
+- **Vite Dev Proxy** — All `/api/*` requests are proxied to `http://localhost:8080` in development (`vite.config.ts`). This ensures cookies set by the API are same-origin with the Vite dev server.
+- **REST API Layer** — `src/lib/apiClient.ts` provides a `fetchApi()` wrapper that automatically attaches Bearer tokens, proactively refreshes tokens before expiry, and handles `auth-expired` events on 401 responses.
 - **ESLint v9** with `typescript-eslint` and `eslint-plugin-react-hooks` for linting
 - **Supabase Migrations** — SQL schema managed in `supabase/migrations/`
 
@@ -39,14 +44,22 @@
 ### Core Business Concepts
 - **Made-to-order / customisation** — every product is positionable as customisable; users choose fabric, measurements, and finishing details
 - **African cultural heritage** — product taxonomy is rooted in African fabric types (Ankara, Kente, Adire, Batik, Aso-Oke, Brocade) and garment styles (Agbada, Kaftan, Iro & Buba, Dashiki, Boubou, Senator, Isiagu)
-- **E-commerce product catalogue & Shopping Cart** — filtering by category, gender, occasion, fabric type; wishlist; shopping cart with item count badge; single-checkout delivery details; local Naira formatting helper.
+- **Nigeria-first market** — all pricing in Naira (₦); delivery defaulted to Nigerian states; Nigerian phone format (+234 XXX XXX XXXX)
+- **E-commerce product catalogue & Shopping Cart** — filtering by category, gender, occasion, fabric type; wishlist; shopping cart with multi-item support and persistent storage; checkout flow with delivery details; Naira currency formatting throughout
+- **Multi-step Order Customization Wizard** — 9-step wizard allowing users to customize outfits (Style → Fabric → Measurements → Personalization → Cart → Delivery → Summary → Payment → Confirmation); cart persists across steps and sessions
 
 ### User Interactions Supported
 - Browse a landing page with marketing sections (Hero, New Arrivals, Customize flow, Categories, Bestsellers, Testimonials, Heritage, Newsletter)
+- Click category tiles to pre-filter the catalog (e.g., "Dresses & Gowns" navigates to `/catalog?category=...` with filters auto-applied)
 - Navigate to a full product catalogue with multi-faceted filtering and text search
+- Click "Customize & Order" on any product card to enter the order wizard with that product pre-selected
 - Toggle wishlist per product card
 - Interact with a fabric selector preview on the Customize section
+- Multi-step order customization: Style → Fabric → Measurements → Personalization → Cart → Delivery → Summary → Payment → Confirmation
+- Add multiple customized outfits to cart; view cart with price breakdown; proceed to checkout from cart
+- **Register and log in** — `/register` and `/login` pages with JWT-based authentication via the REST API gateway; silent session restore on page refresh using the httpOnly refresh token cookie
 - Mobile-responsive navigation with an animated drawer
+- Automatic page scroll-to-top on all route and parameter changes for clean navigation experience
 
 ### Primary Data Types
 - **`Product`** — id, name, slug, description, price, compare_at_price, category, fabric_type, image_url, is_customizable, rating, review_count, tag, gender, occasion, shipping_badge

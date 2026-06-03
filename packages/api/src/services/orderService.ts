@@ -4,167 +4,338 @@
  */
 
 import { prisma } from "@jhaz-imprints/db";
-import { Product } from "@jhaz-imprints/catalog-db";
+import { Product, Fabric } from "@jhaz-imprints/catalog-db";
 import { OrderCreateSchema, type MeasurementCreate } from "@jhaz-imprints/shared";
 import { computeOrderTotal } from "./pricingEngine";
 import { initializePayment, verifyPayment } from "./paystackService";
 import { AppError } from "../errors/AppError";
 import { notificationQueue } from "../queues/notificationWorker";
 
-export interface CreateOrderInput {
-  measurementId: string;
-  productId: string;
-  fabricOptionName?: string;
-  styleOptionName?: string;
-  colorName?: string;
+/** Inline measurement snapshot — supplied by the client, stored as-is. */
+export interface OrderMeasurementInput {
+  chest?: number;
+  waist?: number;
+  hip?: number;
+  shoulder?: number;
+  armLength?: number;
+  length?: number;
+  notes?: string;
 }
 
-async function getCachedProductByIdOrSlug(idOrSlug: string) {
-  const isObjectId = /^[a-f\d]{24}$/i.test(idOrSlug);
-  if (isObjectId) {
-    return prisma.cachedProduct.findUnique({ where: { id: idOrSlug } });
+/**
+ * Calculate required fabric in yards using tailors' layout constraints.
+ */
+export function calculateFabricYards(measurement: any): number {
+  if (!measurement) return 2.0;
+
+  const chest = measurement.chest || 0;
+  const hips = measurement.hip || 0;
+  const height = measurement.length || 0; // length field holds user height
+  const shoulder = measurement.shoulder || 0;
+
+  if (chest <= 0 || hips <= 0 || height <= 0 || shoulder <= 0) {
+    return 2.0; // fallback default
   }
-  return prisma.cachedProduct.findUnique({ where: { slug: idOrSlug } });
+
+  const maxCircumference = Math.max(chest, hips);
+  const easeAndSeams = 15.0; // cm
+  const flatWidth = (maxCircumference / 2) + easeAndSeams;
+  const fabricWidth = 115.0; // cm (45 inches)
+
+  // Layout check: can we fit front and back side-by-side?
+  const numLengths = (flatWidth * 2 > fabricWidth) ? 2 : 1;
+  const garmentLength = height * 0.85;
+  const sleeveLength = shoulder * 1.5;
+  const allowance = 20.0;
+
+  const totalLengthCm = (garmentLength * numLengths) + sleeveLength + allowance;
+  const fabricYards = totalLengthCm / 91.44;
+
+  return Math.max(2.0, Math.round(fabricYards * 100) / 100);
+}
+
+export interface CreateOrderItemInput {
+  productId: string;
+  /** Inline measurement for this customization — no DB lookup performed. */
+  measurement: OrderMeasurementInput;
+  /** MongoDB ObjectId of the chosen Fabric document (omit for Standard/RTW). */
+  fabricId?: string;
+  styleOptionName?: string;
+  notes?: string;
+}
+
+export interface CreateOrderInput {
+  /** Array of customized items — each carries its own measurement snapshot. */
+  items: CreateOrderItemInput[];
+  promoCode?: string;
+  /**
+   * Frontend-computed grand total (in Naira). Backend validates that its own
+   * calculation matches this value to within ±₦1. If they diverge, the order
+   * is rejected with a 409 status so the user can refresh and retry.
+   */
+  expectedTotal?: number;
+  delivery?: {
+    fullName: string;
+    phoneNumber: string;
+    address: string;
+    city: string;
+    state: string;
+    country: string;
+    deliveryMethod: "standard" | "express";
+  };
 }
 
 /**
  * Create a new order.
- * Wrapped in a Prisma transaction for atomicity.
- * 
- * Flow:
- * 1. Fetch product and validate measurement
- * 2. Calculate total amount
- * 3. Create order and payment record in database (with PENDING status)
- * 4. Initialize payment with Paystack (Step 1: Initialize Transaction)
- * 5. Return payment authorization URL for frontend redirect
+ *
+ * Optimised flow:
+ * 1. Pre-validate all input options (format checks, presence) — zero DB calls.
+ * 2. Fetch measurement and authorise owner.
+ * 3. For each item: fetch product (MongoDB source-of-truth), fetch only the
+ *    specified fabric (by id), validate style, compute price — push to allOrders.
+ * 4. Persist one Order row (items JSON) + one Payment row inside a transaction.
+ * 5. Initialise a single Paystack transaction with the combined reference.
  *
  * @param userId - Customer's user ID
- * @param input - Order creation payload
- * @returns Order object, payment reference, and Paystack authorization URL
+ * @param input  - Validated order payload
  */
 export async function createOrder(userId: string, input: CreateOrderInput) {
-  // Fetch product from local cache (Event Replicated from Catalog Service)
-  const product = await getCachedProductByIdOrSlug(input.productId);
-  if (!product) {
-    throw new AppError("Product not found", 404);
+  // ── Step 1: Pre-flight validation — NO database calls yet ──────────────────
+  if (!input.items || !Array.isArray(input.items) || input.items.length === 0) {
+    throw new AppError("No items provided in the order", 400);
   }
 
-  // Verify measurement exists and belongs to user
-  const measurement = await prisma.measurement.findUnique({
-    where: { id: input.measurementId },
-  });
-  if (!measurement || measurement.userId !== userId) {
-    throw new AppError("Measurement not found or does not belong to user", 404);
-  }
+  const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
+  const FABRIC_ID_RE = /^[a-f\d]{24}(::.+)?$/i;
 
-  // Find selected fabric and style options (Defensive: fallback to Standard if missing)
-  const inputFabricSafe = (input.fabricOptionName ?? "Standard").trim().toLowerCase();
-  const inputStyleSafe = (input.styleOptionName ?? "Standard").trim().toLowerCase();
+  for (const item of input.items) {
+    // productId must be a valid MongoDB ObjectId
+    if (!item.productId || !OBJECT_ID_RE.test(item.productId)) {
+      throw new AppError(
+        `Invalid or missing productId: "${item.productId ?? ""}"`,
+        400
+      );
+    }
 
-  // Prisma Json fields are returned as JsonValue. Cast to array of options.
-  const fabricOptions = (product.fabricOptions as any[]) || [];
-  const styleOptions = (product.styleOptions as any[]) || [];
+    // fabricId, when supplied, must also be a valid ObjectId (optionally including ::colorName suffix)
+    if (item.fabricId !== undefined && !FABRIC_ID_RE.test(item.fabricId)) {
+      throw new AppError(
+        `Invalid fabricId format for productId=${item.productId}: "${item.fabricId}"`,
+        400
+      );
+    }
 
-  let fabricOption = fabricOptions.find(
-    (f: any) => (f.name ?? "").trim().toLowerCase() === inputFabricSafe
-  );
-  
-  // Resilient fallback: If no fabric options are configured, allow "Standard" or "Original" with 0 modifier
-  if (!fabricOption && fabricOptions.length === 0) {
-    if (inputFabricSafe === "standard" || inputFabricSafe === "original" || !input.fabricOptionName) {
-      fabricOption = { name: input.fabricOptionName || "Standard", priceModifier: 0 };
+    // styleOptionName, when supplied, must be a non-empty string
+    if (
+      item.styleOptionName !== undefined &&
+      typeof item.styleOptionName === "string" &&
+      item.styleOptionName.trim() === ""
+    ) {
+      throw new AppError(
+        `styleOptionName cannot be blank for productId=${item.productId}`,
+        400
+      );
     }
   }
 
-  let styleOption = styleOptions.find(
-    (s: any) => (s.name ?? "").trim().toLowerCase() === inputStyleSafe
+  // ── Step 2 (skipped): Measurement data is supplied inline per item — no DB lookup. ─
+
+  // ── Step 3: Verify each item and accumulate order rows ──────────────────────
+  const allOrders: any[] = [];
+  let totalOrderAmount = 0;
+
+  for (const item of input.items) {
+    // 3a. Fetch product from source of truth (MongoDB)
+    const mongoProduct = await Product.findById(item.productId).lean();
+    if (!mongoProduct) {
+      throw new AppError(`Product not found: productId=${item.productId}`, 404);
+    }
+
+    // 3b. Fabric — fetch only the single fabric document specified in the item
+    let fabricPriceModifier = 0;
+    let resolvedFabricName = "Standard";
+    let resolvedFabricId: string | null = null;
+    let yardsPerUnit = 1.0;
+    let fabricUnit = "yard";
+
+    if (item.fabricId) {
+      const [cleanFabricId, selectedColorName] = item.fabricId.split("::");
+
+      const fabricDoc = await Fabric.findById(cleanFabricId).lean();
+      if (!fabricDoc) {
+        throw new AppError(
+          `Fabric not found: fabricId=${cleanFabricId}`,
+          404
+        );
+      }
+
+      // Find property by colorName (case-insensitive), fallback to the first property if not found/specified.
+      let prop = null;
+      if (selectedColorName && fabricDoc.properties) {
+        prop = fabricDoc.properties.find(
+          (p) => p.colorName.toLowerCase() === selectedColorName.toLowerCase()
+        ) ?? null;
+      }
+      if (!prop && fabricDoc.properties && fabricDoc.properties.length > 0) {
+        prop = fabricDoc.properties[0];
+      }
+
+      // Both price modifiers come strictly from the DB; default to 0 if not set.
+      fabricPriceModifier = prop?.priceModifier ?? 0;
+      resolvedFabricName = prop
+        ? `${fabricDoc.name} — ${prop.colorName}`
+        : fabricDoc.name;
+      resolvedFabricId = cleanFabricId;
+      yardsPerUnit = prop?.yardsPerUnit ?? 1.0;
+      fabricUnit = prop?.unit ?? "yard";
+    }
+
+    // Calculate required fabric yards and packaging units needed
+    const estimatedYards = calculateFabricYards(item.measurement);
+    const unitsNeeded = Math.ceil(estimatedYards / yardsPerUnit);
+    const totalFabricModifier = fabricPriceModifier * unitsNeeded;
+
+    // 3c. Style option — validate against product's own style list
+    const inputStyleSafe = (item.styleOptionName ?? "Standard").trim();
+    let stylePriceModifier = 0;
+    let resolvedStyleName = inputStyleSafe;
+
+    if (
+      inputStyleSafe.toLowerCase() !== "standard" &&
+      inputStyleSafe.toLowerCase() !== "original"
+    ) {
+      const styleOpt = mongoProduct.styleOptions?.find(
+        (s) => s.name.toLowerCase() === inputStyleSafe.toLowerCase()
+      );
+      if (!styleOpt) {
+        throw new AppError(
+          `Style option "${inputStyleSafe}" not found on productId=${item.productId}`,
+          404
+        );
+      }
+      // priceModifier comes strictly from DB; ?? 0 preserves explicit DB zero.
+      stylePriceModifier = styleOpt.priceModifier ?? 0;
+      resolvedStyleName = styleOpt.name;
+    }
+
+    // 3d. Compute this item's price and push to allOrders
+    const itemTotal = computeOrderTotal({
+      basePrice: mongoProduct.basePrice,
+      fabricPriceModifier: totalFabricModifier,
+      stylePriceModifier,
+    });
+
+    totalOrderAmount += itemTotal;
+
+    allOrders.push({
+      productId: item.productId,
+      productName: mongoProduct.name,
+      // Inline measurement snapshot — stored exactly as supplied by the client
+      measurement: item.measurement,
+      fabricId: resolvedFabricId,
+      fabricOptionName: resolvedFabricName,
+      styleOptionName: resolvedStyleName,
+      // colorName is resolved from the fabric property (DB); null if no fabric selected.
+      colorName: resolvedFabricName.includes(" — ")
+        ? resolvedFabricName.split(" — ")[1]
+        : null,
+      basePrice: mongoProduct.basePrice,
+      styleModifier: stylePriceModifier,
+      fabricPricePerUnit: fabricPriceModifier,
+      fabricQty: unitsNeeded,
+      fabricUnit: fabricUnit,
+      fabricYards: estimatedYards,
+      yardsPerUnit: yardsPerUnit,
+      fabricModifier: totalFabricModifier,
+      totalAmount: itemTotal,
+      notes: item.notes ?? null,
+    });
+  }
+
+  // Calculate delivery fee and promo discounts
+  let deliveryFee = 0;
+  if (input.delivery) {
+    deliveryFee = input.delivery.deliveryMethod === "express" ? 7500 : 3500;
+  }
+  let discount = 0;
+  if (input.promoCode === "JHAZ10") {
+    discount = (totalOrderAmount + deliveryFee) * 0.1;
+  }
+  const grandTotal = totalOrderAmount + deliveryFee - discount;
+
+  // ── Price integrity check: reject if frontend total diverges from backend ──
+  if (
+    input.expectedTotal !== undefined &&
+    Math.abs(grandTotal - input.expectedTotal) > 1
+  ) {
+    console.warn(
+      `[pricingMismatch] userId=${userId} expectedTotal=${input.expectedTotal} backendTotal=${grandTotal} diff=${Math.abs(grandTotal - input.expectedTotal)}`
+    );
+    throw new AppError(
+      `Price mismatch: your cart shows ₦${input.expectedTotal.toLocaleString()} but the verified total is ₦${grandTotal.toLocaleString()}. Please refresh the page and try again.`,
+      409
+    );
+  }
+
+  const notesMetadata = JSON.stringify({
+    delivery: input.delivery,
+    promoCode: input.promoCode,
+  });
+
+  // ── Step 4: Persist order + payment atomically ──────────────────────────────
+  const { order: newOrder, payment, reference } = await prisma.$transaction(
+    async (tx) => {
+      const newOrder = await tx.order.create({
+        data: {
+          userId,
+          // measurementId omitted — measurement is stored inline in items JSON
+          items: allOrders,
+          totalAmount: grandTotal,
+          status: "PENDING",
+          notes: notesMetadata,
+        },
+        include: { user: true },
+      });
+
+      const reference = `order_${newOrder.id}_${Date.now()}`;
+      const payment = await tx.payment.create({
+        data: {
+          orderId: newOrder.id,
+          amount: grandTotal,
+          status: "PENDING",
+          reference,
+          provider: "PAYSTACK",
+        },
+      });
+
+      return { order: newOrder, payment, reference };
+    }
   );
 
-  // Resilient fallback: If no style options are configured, allow "Standard" or "Original" with 0 modifier
-  if (!styleOption && styleOptions.length === 0) {
-    if (inputStyleSafe === "standard" || inputStyleSafe === "original" || !input.styleOptionName) {
-      styleOption = { name: input.styleOptionName || "Standard", priceModifier: 0 };
-    }
-  }
-
-  if (!fabricOption) {
-    const available = fabricOptions.length > 0 
-      ? fabricOptions.map((f: any) => f.name).join(', ') 
-      : "NONE CONFIGURED (Ready to Wear)";
-    throw new AppError(`Invalid fabric option. Received: '${input.fabricOptionName}', Available: [${available}]. If this is a standard item, please ensure 'Standard' is selected.`, 400);
-  }
-
-  if (!styleOption) {
-    const available = styleOptions.length > 0 
-      ? styleOptions.map((s: any) => s.name).join(', ') 
-      : "NONE CONFIGURED (Ready to Wear)";
-    throw new AppError(`Invalid style option. Received: '${input.styleOptionName}', Available: [${available}]. If this is a standard item, please ensure 'Standard' is selected.`, 400);
-  }
-
-  // Compute total price
-  const totalAmount = computeOrderTotal({
-    basePrice: product.basePrice,
-    fabricPriceModifier: fabricOption.priceModifier,
-    stylePriceModifier: styleOption.priceModifier,
-  });
-
-  // Create order and payment in database (Step 0: DB setup)
-  const createdOrder = await prisma.$transaction(async (tx) => {
-    // Create order
-    const newOrder = await tx.order.create({
-      data: {
-        userId,
-        measurementId: input.measurementId,
-        productId: input.productId,
-        styleOptionName: styleOption.name,
-        fabricOptionName: fabricOption.name,
-        colorName: input.colorName,
-        basePrice: product.basePrice,
-        styleModifier: styleOption.priceModifier,
-        fabricModifier: fabricOption.priceModifier,
-        totalAmount,
-        status: "PENDING",
-      },
-      include: {
-        measurement: true,
-        user: true,
-      },
-    });
-
-    // Create payment record with unique reference for idempotency
-    const reference = `order_${newOrder.id}_${Date.now()}`;
-    const payment = await tx.payment.create({
-      data: {
-        orderId: newOrder.id,
-        amount: totalAmount,
-        status: "PENDING",
-        reference,
-        provider: "PAYSTACK",
-      },
-    });
-
-    return { order: newOrder, payment, reference };
-  });
-
-  // Step 1: Initialize transaction with Paystack
-  // This returns the authorization URL that the frontend will redirect to
+  // ── Step 5: Initiate single Paystack transaction with the combined reference ─
   const paystackInit = await initializePayment(
-    (createdOrder.order as any).user.email,
-    totalAmount,
-    createdOrder.reference,
+    (newOrder as any).user.email,
+    grandTotal,
+    reference,
     {
-      orderId: createdOrder.order.id,
+      orderId: newOrder.id,
       userId,
-      customerEmail: (createdOrder.order as any).user.email,
+      customerEmail: (newOrder as any).user.email,
     }
   );
 
   return {
-    order: createdOrder.order,
-    payment: createdOrder.payment,
-    paymentUrl: paystackInit.authorizationUrl, // Frontend redirects user to this URL
-    accessCode: paystackInit.accessCode,      // For frontend PaystackPop modal
-    reference: createdOrder.reference,
+    order: newOrder,
+    payment,
+    paymentUrl: paystackInit.authorizationUrl,
+    accessCode: paystackInit.accessCode,
+    reference,
+    breakdown: {
+      itemsSubtotal: totalOrderAmount,
+      deliveryFee,
+      discount,
+      grandTotal,
+    },
   };
 }
 
@@ -197,8 +368,12 @@ export async function confirmPayment(reference: string) {
 
   // If already completed, return early (idempotency)
   if (payment.status === "COMPLETED") {
-    return { alreadyProcessed: true, payment };
+    const order = await prisma.order.findUnique({
+      where: { id: payment.orderId }
+    });
+    return { alreadyProcessed: true, payment, order };
   }
+
 
   // Fetch order
   console.log(`[orderService] Confirming payment for reference: ${reference}, orderId: ${payment.orderId}`);
@@ -289,12 +464,11 @@ export async function confirmPayment(reference: string) {
     console.log(`[orderService] Enqueueing notification for order: ${updated.order.id}`);
     
     // Augment with product data for notification
-    let productName = "Custom Outfit";
-    try {
-      const product = await getCachedProductByIdOrSlug(updated.order.productId);
-      if (product) productName = product.name;
-    } catch (error) {
-      console.warn(`[orderService] Failed to fetch product info for notification:`, error);
+    const orderItems = (updated.order.items as any[]) || [];
+    const firstItem = orderItems[0] || {};
+    let productName = firstItem.productName || "Custom Outfit";
+    if (orderItems.length > 1) {
+      productName = `${productName} & ${orderItems.length - 1} other item(s)`;
     }
     
     try {
@@ -307,9 +481,9 @@ export async function confirmPayment(reference: string) {
         totalPrice: updated.order.totalAmount,
         measurement: updated.order.measurement,
         productName,
-        fabricOption: updated.order.fabricOptionName,
-        colorOption: updated.order.colorName,
-        styleOption: updated.order.styleOptionName,
+        fabricOption: firstItem.fabricOptionName || "Standard",
+        colorOption: firstItem.colorName || "Default",
+        styleOption: firstItem.styleOptionName || "Standard",
       });
       console.log(`[orderService] ✓ Notification job added to queue`);
     } catch (error) {
@@ -353,23 +527,181 @@ export async function getOrderById(userId: string, orderId: string) {
     throw new AppError("Forbidden", 403);
   }
 
-  let localProduct = null;
-  try {
-    localProduct = await getCachedProductByIdOrSlug(order.productId);
-  } catch (error) {
-    console.warn(`[orderService] Product ${order.productId} not found for order ${order.id}`);
+  if (order.status === "PENDING") {
+    return await revalidateOrderPricing(order);
   }
-  
-  return {
-    ...order,
-    product: localProduct || null,
-  };
+
+  return order;
+}
+
+/**
+ * Revalidate pricing for pending orders.
+ * Fetches the latest basePrice, fabricModifier, and styleModifier from MongoDB,
+ * recalculates totalAmount, and persists to PostgreSQL if any pricing changed.
+ */
+export async function revalidateOrderPricing(order: any) {
+  if (order.status !== "PENDING") {
+    return order;
+  }
+
+  let deliveryFee = 0;
+  let promoCode: string | undefined = undefined;
+  if (order.notes) {
+    try {
+      const meta = JSON.parse(order.notes);
+      if (meta && typeof meta === "object") {
+        const delivery = meta.delivery;
+        promoCode = meta.promoCode;
+        if (delivery && delivery.deliveryMethod) {
+          deliveryFee = delivery.deliveryMethod === "express" ? 7500 : 3500;
+        }
+      }
+    } catch (e) {
+      // ignore parsing error for legacy plaintext notes
+    }
+  }
+
+  const items = order.items as any[];
+  if (!Array.isArray(items) || items.length === 0) {
+    return order;
+  }
+
+  let updated = false;
+  let totalOrderAmount = 0;
+  const updatedItems: any[] = [];
+
+  for (const item of items) {
+    let basePrice = item.basePrice;
+    let fabricModifier = item.fabricModifier;
+    let styleModifier = item.styleModifier;
+
+    // 1. Fetch latest product basePrice and styleModifier
+    const mongoProduct = await Product.findById(item.productId).lean();
+    if (mongoProduct) {
+      if (mongoProduct.basePrice !== item.basePrice) {
+        console.log(`[pricingSync] Product ${item.productId} basePrice changed: ${item.basePrice} -> ${mongoProduct.basePrice}`);
+        basePrice = mongoProduct.basePrice;
+        updated = true;
+      }
+
+      // Check style modifier
+      const styleName = item.styleOptionName || "Standard";
+      if (styleName.toLowerCase() !== "standard" && styleName.toLowerCase() !== "original") {
+        const styleOpt = mongoProduct.styleOptions?.find(
+          (s) => s.name.toLowerCase() === styleName.toLowerCase()
+        );
+        if (styleOpt) {
+          const latestStyleMod = styleOpt.priceModifier ?? 0;
+          if (latestStyleMod !== item.styleModifier) {
+            console.log(`[pricingSync] Style modifier for ${styleName} changed: ${item.styleModifier} -> ${latestStyleMod}`);
+            styleModifier = latestStyleMod;
+            updated = true;
+          }
+        }
+      }
+    }
+
+    // 2. Fetch latest fabricModifier
+    if (item.fabricId) {
+      const fabricDoc = await Fabric.findById(item.fabricId).lean();
+      if (fabricDoc) {
+        let prop = null;
+        if (item.colorName && fabricDoc.properties) {
+          prop = fabricDoc.properties.find(
+            (p) => p.colorName.toLowerCase() === item.colorName.toLowerCase()
+          ) ?? null;
+        }
+        if (!prop && fabricDoc.properties && fabricDoc.properties.length > 0) {
+          prop = fabricDoc.properties[0];
+        }
+        const latestFabricPricePerUnit = prop?.priceModifier ?? 0;
+        const currentYardsPerUnit = prop?.yardsPerUnit ?? 1.0;
+        
+        const estimatedYards = calculateFabricYards(item.measurement);
+        const unitsNeeded = Math.ceil(estimatedYards / currentYardsPerUnit);
+        const totalFabricModifier = latestFabricPricePerUnit * unitsNeeded;
+        
+        if (
+          latestFabricPricePerUnit !== item.fabricPricePerUnit ||
+          unitsNeeded !== item.fabricQty ||
+          currentYardsPerUnit !== item.yardsPerUnit ||
+          totalFabricModifier !== item.fabricModifier
+        ) {
+          console.log(`[pricingSync] Fabric properties or qty changed for order item`);
+          fabricModifier = totalFabricModifier;
+          item.fabricPricePerUnit = latestFabricPricePerUnit;
+          item.fabricQty = unitsNeeded;
+          item.yardsPerUnit = currentYardsPerUnit;
+          item.fabricUnit = prop?.unit ?? "yard";
+          item.fabricYards = estimatedYards;
+          item.fabricModifier = totalFabricModifier;
+          updated = true;
+        }
+      }
+    }
+
+    // 3. Compute item total amount
+    const latestItemTotal = computeOrderTotal({
+      basePrice,
+      fabricPriceModifier: fabricModifier,
+      stylePriceModifier: styleModifier,
+    });
+
+    if (latestItemTotal !== item.totalAmount) {
+      updated = true;
+    }
+
+    totalOrderAmount += latestItemTotal;
+
+    updatedItems.push({
+      ...item,
+      basePrice,
+      fabricModifier,
+      styleModifier,
+      totalAmount: latestItemTotal,
+    });
+  }
+
+  const grandTotal = totalOrderAmount + deliveryFee - (promoCode === "JHAZ10" ? (totalOrderAmount + deliveryFee) * 0.1 : 0);
+
+  // If there are changes, update the PostgreSQL database
+  if (updated || grandTotal !== order.totalAmount) {
+    console.log(`[pricingSync] Updating order ${order.id} total amount: ${order.totalAmount} -> ${grandTotal}`);
+    
+    // Update order and payment records atomically
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      const uOrder = await tx.order.update({
+        where: { id: order.id },
+        data: {
+          items: updatedItems,
+          totalAmount: grandTotal,
+        },
+        include: {
+          measurement: true,
+          statusHistory: true,
+          payment: true,
+        }
+      });
+
+      // Update payment record amount if it exists
+      await tx.payment.updateMany({
+        where: { orderId: order.id },
+        data: { amount: grandTotal }
+      });
+
+      return uOrder;
+    });
+
+    return updatedOrder;
+  }
+
+  return order;
 }
 
 /**
  * Get all orders for a user (paginated).
  */
-export async function getUserOrders(userId: string, skip = 0, take = 10) {
+export async function getUserOrders(userId: string, skip = 0, take = 20) {
   const orders = await prisma.order.findMany({
     where: { userId },
     include: {
@@ -384,23 +716,7 @@ export async function getUserOrders(userId: string, skip = 0, take = 10) {
 
   const total = await prisma.order.count({ where: { userId } });
 
-  // Augment all orders with product data from Local Cache
-  const augmentedOrders = await Promise.all(
-    orders.map(async (order) => {
-      let product = null;
-      try {
-        product = await getCachedProductByIdOrSlug(order.productId);
-      } catch (error) {
-        console.warn(`[orderService] Product ${order.productId} not found for order ${order.id}`);
-      }
-      return {
-        ...order,
-        product: product || null,
-      };
-    })
-  );
-  
-  return { orders: augmentedOrders, total, skip, take };
+  return { orders, total, skip, take };
 }
 
 /**
@@ -418,8 +734,14 @@ export async function getUserMeasurements(userId: string) {
  * Create a new measurement profile for a user.
  */
 export async function createMeasurement(userId: string, input: MeasurementCreate) {
+  const count = await prisma.measurement.count({
+    where: { userId }
+  });
+  if (count >= 2) {
+    throw new AppError("You cannot save more than 2 measurement profiles. Please update an existing profile.", 400);
+  }
+
   // If this is set as default, optionally unset others (not implemented for simplicity)
-  
   const measurement = await prisma.measurement.create({
     data: {
       userId,
@@ -428,4 +750,79 @@ export async function createMeasurement(userId: string, input: MeasurementCreate
   });
 
   return measurement;
+}
+
+/**
+ * Update an existing measurement profile for a user.
+ */
+export async function updateMeasurement(userId: string, measurementId: string, input: MeasurementCreate) {
+  const existing = await prisma.measurement.findFirst({
+    where: { id: measurementId, userId }
+  });
+
+  if (!existing) {
+    throw new AppError("Measurement profile not found or access denied", 404);
+  }
+
+  const updated = await prisma.measurement.update({
+    where: { id: measurementId },
+    data: {
+      ...input,
+    }
+  });
+
+  return updated;
+}
+
+/**
+ * Initialize a new Paystack payment and update the payment reference in the database.
+ */
+export async function initializeOrderPayment(userId: string, orderId: string, email: string) {
+  const orderResult = await getOrderById(userId, orderId);
+
+  if (orderResult.status !== "PENDING") {
+    throw new AppError(
+      `Cannot create payment intent for order with status: ${orderResult.status}`,
+      400
+    );
+  }
+
+  const paymentRef = `order_${orderResult.id}_${Date.now()}`;
+
+  // Initialize payment with Paystack
+  const paymentIntent = await initializePayment(
+    email,
+    orderResult.totalAmount,
+    paymentRef,
+    {
+      orderId: orderResult.id,
+      userId,
+      customerEmail: email,
+    }
+  );
+
+  // Update or create the payment record in the database
+  await prisma.payment.upsert({
+    where: { orderId: orderResult.id },
+    update: {
+      reference: paymentRef,
+      status: "PENDING",
+      amount: orderResult.totalAmount,
+    },
+    create: {
+      orderId: orderResult.id,
+      reference: paymentRef,
+      status: "PENDING",
+      amount: orderResult.totalAmount,
+      provider: "PAYSTACK",
+    },
+  });
+
+  return {
+    paystackAccessCode: paymentIntent.accessCode,
+    paystackAuthorizationUrl: paymentIntent.authorizationUrl,
+    reference: paymentIntent.reference,
+    orderId: orderResult.id,
+    amount: orderResult.totalAmount,
+  };
 }

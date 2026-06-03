@@ -17,6 +17,8 @@ Client-side routing is managed entirely by **React Router DOM v7**. The router i
 - All current routes live in `App.tsx` — new routes should be added there
 - Pages live in `src/pages/`; they are imported into `App.tsx`
 - Hash-based section anchors (`/#customize`, `/#heritage`) are used for same-page navigation from other routes
+- Current routes: `/` (Home), `/catalog` (Catalog), `/order` (Order Wizard), `/cart` (Cart Page), `/login` (Login), `/register` (Register)
+- Search params are used for: `?category=...` (Catalog filtering), `?step=N` (Order wizard steps), `?product=...` (Product pre-selection), `?redirect=...` (post-login redirect for Login/Register pages)
 
 ---
 
@@ -25,9 +27,9 @@ Client-side routing is managed entirely by **React Router DOM v7**. The router i
 ### Description
 The UI is composed of **pure React functional components** using TSX. The application distinguishes between:
 - **Section components** (home page sections, e.g., `Hero`, `NewArrivals`) — self-contained, full-width marketing blocks
-- **Page components** (e.g., `Catalog`) — feature-rich pages with data-fetching and complex local state
+- **Page components** (e.g., `Catalog`, `Order`, `Cart`) — feature-rich pages with data-fetching, complex local state, and/or cart management
 - **Layout components** (e.g., `Navbar`, `Footer`, `App`) — persistent wrappers rendered outside the route tree
-- **Inline sub-components** — small presentational components defined inside the same file (e.g., `FilterTag`, `FilterSection`, `ProductCard` in `Catalog.tsx`)
+- **Inline sub-components** — small presentational components defined inside the same file (e.g., `FilterTag`, `FilterSection`, `ProductCard` in `Catalog.tsx`; `StepCart`, `StepDelivery` in `Order.tsx`)
 
 ### REQUIRED Patterns
 - All components are **default-exported functional components**
@@ -53,7 +55,8 @@ All styling uses **Tailwind CSS v3** with a project-specific design token extens
 - **Animation classes** — `animate-fade-up`, `animate-slide-in-left`, `animate-slide-in-right`, `animate-float`, `animate-marquee`, plus `delay-*` utilities
 
 ### CONSTRAINTS
-- Animations are triggered by `useInView` — sections that animate in must wrap content with `ref={ref}` and conditionally apply `animate-*` vs `opacity-0`
+- Animations are triggered by `useInView` — sections that animate in must wrap content with `ref={ref
+}` and conditionally apply `animate-*` vs `opacity-0`
 - The `pattern-overlay` class applies the background radial gradient texture to hero sections
 - `text-gradient` and `border-gradient` apply the terra→kente gradient accent
 
@@ -83,10 +86,15 @@ Data access uses the **Supabase JS v2 client** initialised in `src/lib/supabase.
 Scroll-triggered animations are powered by the `useInView` custom hook (`src/hooks/useInView.ts`), which wraps `IntersectionObserver`. Sections become visible once, then unobserve.
 
 ### REQUIRED Patterns
-- All section components that animate on scroll must call `const { ref, isVisible } = useInView()`
+- All section components that animate on scroll must call `const { ref, isVisible
+} = useInView()`
 - The `ref` is attached to the section's container div (usually `section-container` wrapper)
 - Visibility conditionally swaps `animate-*` for `opacity-0` on the wrapper or child elements
-- Child elements inside the section use `style={{ animationDelay: \`${i * 100}ms\` }}` for staggered entry
+- Child elements inside the section use `style={
+    { animationDelay: \`${i * 100
+        }ms\`
+    }
+}` for staggered entry
 
 ### CONSTRAINTS
 - `useInView` is **one-shot** — once visible, `isVisible` stays `true` and the element is unobserved
@@ -109,8 +117,11 @@ The `Navbar` component is a fixed, transparent-to-opaque header that uses scroll
 
 ### CONSTRAINTS
 - Desktop nav links use `<Link to="...">` from React Router
-- Mobile menu uses a `max-h-0 → max-h-[400px]` height transition for show/hide animation
-- Scroll listener must use `{ passive: true }` for performance
+- Mobile menu uses a `max-h-0 → max-h-[
+    400px
+]` height transition for show/hide animation
+- Scroll listener must use `{ passive: true
+}` for performance
 
 ---
 
@@ -128,4 +139,30 @@ Shared application state (primarily custom outfits shopping cart data) is manage
 ### CONSTRAINTS
 - Do not duplicate shopping cart state in page-level React states; always consume from the context hook
 - Cart must be cleared upon successful payment completion via `clearCart()`
+
+---
+
+## 8. Authentication (`auth`)
+
+### Description
+User authentication is managed via a JWT-based REST API (the gateway at `http://localhost:8080` in dev). The app uses a **dual-token** pattern:
+- **Access token** — stored in memory only via `src/lib/tokenStore.ts` (XSS-safe)
+- **Refresh token** — stored in an httpOnly cookie managed by the server (CSRF-safe)
+
+Authentication state (current user, loading, error) is held in **Redux Toolkit** (`src/store/slices/authSlice.ts`). The app silently restores sessions on page load via `AuthInitializer.tsx`.
+
+### REQUIRED Patterns
+- All API calls (authenticated or not) must go through `fetchApi()` from `src/lib/apiClient.ts` — never use `fetch()` directly for API calls
+- `fetchApi()` automatically attaches the Bearer token from `tokenStore`, refreshes it proactively 60 seconds before expiry, and deduplicates concurrent refresh calls
+- Auth state must be read via `useAppSelector((state) => state.auth)` using the typed hook from `src/store/hooks.ts`
+- Auth actions must be dispatched via `useAppDispatch()` from `src/store/hooks.ts`
+- `AuthInitializer` wraps all app content in `App.tsx`; it calls `dispatch(loadProfile())` on mount to restore sessions silently
+- Pages that require authentication should redirect to `/login?redirect=<current-path>` when `user` is null
+
+### CONSTRAINTS
+- Access tokens must never be stored in `localStorage` or `sessionStorage` — use `tokenStore` (in-memory) only
+- The `<Provider store={store}>` must remain the outermost wrapper in `App.tsx`, wrapping `<AuthInitializer>`
+- `loginUser`, `registerUser`, `logoutUser`, and `loadProfile` are the four async thunks; do not add API calls directly to components
+- `window.dispatchEvent(new Event('auth-expired'))` is used internally by `apiClient` on 401 responses; `AuthInitializer` listens for this event and calls `dispatch(clearAuth())`
+- The Vite dev proxy (`/api` → `http://localhost:8080`) is required for cookie-based refresh to work in development; do not set `VITE_API_URL` to an absolute URL in development
 

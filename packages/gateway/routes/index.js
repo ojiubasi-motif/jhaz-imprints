@@ -25,11 +25,12 @@ const router = express.Router();
 // ─── Service Registry ─────────────────────────────────────────────────────────
 // Maps URL path prefixes to downstream service base URLs.
 // Loaded from environment variables so you can target different hosts
-// in development (Docker network names) vs production (private VPC IPs).
 const SERVICE_MAP = {
   // Catalog microservice — products, admin product management, uploads
-  '/api/v1/products': process.env.CATALOG_SERVICE_URL,
-  '/api/v1/admin':    process.env.CATALOG_SERVICE_URL,
+  '/api/v1/products':   process.env.CATALOG_SERVICE_URL,
+  '/api/v1/categories': process.env.CATALOG_SERVICE_URL,
+  '/api/v1/fabrics':    process.env.CATALOG_SERVICE_URL,
+  '/api/v1/admin':      process.env.CATALOG_SERVICE_URL,
 
   // Core API — auth, orders
   '/api/auth':        process.env.CORE_API_URL,

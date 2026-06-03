@@ -6,6 +6,10 @@ import dotenv from 'dotenv';
 import productRouter from './routes/products';
 import adminProductRouter from './routes/adminProducts';
 import uploadRouter from './routes/uploads';
+import categoryRouter from './routes/categories';
+import adminCategoryRouter from './routes/adminCategories';
+import fabricRouter from './routes/fabrics';
+import adminFabricRouter from './routes/adminFabrics';
 import type { ErrorRequestHandler } from 'express';
 import { connectMongoDB } from '@jhaz-imprints/catalog-db';
 import { getMongoDBConnection } from '@jhaz-imprints/catalog-db/connection';
@@ -42,8 +46,17 @@ app.get('/health', (req, res) => {
   }
 });
 
+import { verifyGatewayOrigin } from './middleware/authenticate';
+
+// Mount gateway origin verification middleware globally
+app.use(verifyGatewayOrigin);
+
 // Mount routes
+app.use('/api/v1/categories', categoryRouter);
+app.use('/api/v1/fabrics', fabricRouter);
 app.use('/api/v1/products', productRouter);
+app.use('/api/v1/admin/categories', adminCategoryRouter);
+app.use('/api/v1/admin/fabrics', adminFabricRouter);
 app.use('/api/v1/admin/products', adminProductRouter);
 app.use('/api/v1/admin/uploads', uploadRouter);
 

@@ -1,0 +1,74 @@
+{
+  "categories": [
+    {
+      "name": "Wedding Aso-oke",
+      "slug": "wedding-aso-oke",
+      "desc": "Handwoven Aso-oke fabric sets for traditional and church wedding ceremonies"
+    },
+    {
+      "name": "Agbada",
+      "slug": "agbada",
+      "desc": "Grand flowing robe ensemble worn for high-profile occasions; includes babban riga variants"
+    },
+    {
+      "name": "Kaftan",
+      "slug": "kaftan",
+      "desc": "Relaxed long-sleeved robe for men; ranges from casual to formal depending on fabric choice"
+    },
+    {
+      "name": "Kente Gown",
+      "slug": "kente-gown",
+      "desc": "Women's gowns and two-piece sets featuring Ghanaian Kente strip-woven fabric"
+    },
+    {
+      "name": "Ankara Casual",
+      "slug": "ankara-casual",
+      "desc": "Everyday and smart-casual wax-print outfits for men and women"
+    },
+    {
+      "name": "Burial Wear",
+      "slug": "burial-wear",
+      "desc": "Dignified funeral attire made in white, black, or ash fabric per family tradition"
+    },
+    {
+      "name": "Iro & Buba",
+      "slug": "iro-buba",
+      "desc": "Traditional Yoruba two-piece blouse-and-wrapper set for women"
+    },
+    {
+      "name": "Senator",
+      "slug": "senator",
+      "desc": "Smart two-piece Abuja senator suit popular for corporate and political events"
+    },
+    {
+      "name": "Dashiki",
+      "slug": "dashiki",
+      "desc": "Colourful embroidered pullover shirt; casual and festive"
+    },
+    {
+      "name": "Boubou",
+      "slug": "boubou",
+      "desc": "Flowing West African robe for men and women; suitable for Friday prayers and cultural events"
+    },
+    {
+      "name": "Isiagu",
+      "slug": "isiagu",
+      "desc": "Igbo traditional blouse featuring lion-head brocade; worn by men for title-taking ceremonies"
+    },
+    {
+      "name": "Blazer Top",
+      "slug": "blazer-top",
+      "desc": "Tailored blazer-style blouse for women; smart-casual and corporate variants"
+    },
+    {
+      "name": "Lace Wear",
+      "slug": "lace-wear",
+      "desc": "French lace, Swiss lace, and guipure lace outfits for weddings and owambe parties"
+    },
+    {
+      "name": "Other",
+      "slug": "other",
+      "desc": "Custom or uncategorised outfits not fitting the standard categories"
+    }
+  ]
+}

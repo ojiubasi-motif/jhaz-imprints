@@ -78,6 +78,12 @@ importers:
 
   apps/bolt:
     dependencies:
+      '@jhaz-imprints/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@reduxjs/toolkit':
+        specifier: ^2.11.2
+        version: 2.11.2(react-redux@9.2.0(@types/react@18.3.28)(react@18.3.1)(redux@5.0.1))(react@18.3.1)
       '@supabase/supabase-js':
         specifier: ^2.57.4
         version: 2.106.2
@@ -90,6 +96,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      react-redux:
+        specifier: ^9.2.0
+        version: 9.2.0(@types/react@18.3.28)(react@18.3.1)(redux@5.0.1)
       react-router-dom:
         specifier: ^7.15.1
         version: 7.15.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

@@ -67,6 +67,44 @@ router.get(
 );
 
 /**
+ * PUT /api/orders/measurements/:id
+ * Update an existing customer measurement profile.
+ */
+router.put(
+  "/measurements/:id",
+  authenticate,
+  validateBody(MeasurementCreateSchema),
+  asyncHandler((req: AuthenticatedRequest, res) =>
+    orderHandlers.updateMeasurementHandler(req, res)
+  )
+);
+
+/**
+ * GET /api/orders/fabric-formula
+ * Get the formula parameters for calculating fabric quantity.
+ */
+router.get(
+  "/fabric-formula",
+  asyncHandler((req, res) => {
+    res.json({
+      msg: "fabric formula retrieved",
+      data: {
+        ease: 15.0,
+        fabricWidth: 115.0,
+        garmentLengthMultiplier: 0.85,
+        sleeveLengthMultiplier: 1.5,
+        allowance: 20.0,
+        divisor: 91.44,
+        minYards: 2.0,
+        unit: "yards"
+      },
+      type: "SUCCESS",
+      code: 600
+    });
+  })
+);
+
+/**
  * GET /api/orders/my-orders
  * Get all orders for the authenticated user (paginated).
  */

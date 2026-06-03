@@ -53,5 +53,5 @@ export async function getUserMeasurementsHandler(req: AuthenticatedRequest, res:
 ```
 
 ## Naming Conventions
-- Files: `lowercaseDomain.ts` (e.g., `auth.ts`, `products.ts`).
+- Files: `lowercaseDomain.ts` (e.g., `auth.ts`, `orders.ts`).
 - Functions: `camelCaseHandler` (e.g., `loginHandler`).

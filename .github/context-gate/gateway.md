@@ -43,8 +43,8 @@ Everything documented here is derived from actual, observed patterns within this
 - **What it is**: Interceptor functions that handle logging, CORS, body parsing, rate limiting, authentication, and authorization.
 - **Examples**: `packages/gateway/middleware/auth.js`, `packages/gateway/middleware/rbac.js`, `packages/gateway/middleware/logger.js`
 - **Key Conventions**:
-  - Bypasses authentication check if the path is a registered public route (e.g. products browsing, auth endpoints).
-  - Employs early returns that respond immediately with JSON errors and appropriate HTTP status codes (e.g. 401, 403) to prevent request leaks.
+  - Bypasses authentication check if the path is a registered public route (e.g., products browsing, auth endpoints like login/register/refresh, or signature-verified webhooks).
+  - Employs early returns that respond immediately with JSON errors and appropriate HTTP status codes (e.g., 401, 403) to prevent request leaks.
   - Attaches context properties like `req.user`, `req.userId`, `req.userRole`, and `req.proxyDestination` to pass parameters down the pipeline.
 
 ### `utils`
@@ -52,7 +52,8 @@ Everything documented here is derived from actual, observed patterns within this
 - **Examples**: `packages/gateway/lib/proxyRequest.js`
 - **Key Conventions**:
   - Stateless helper functions that accept the Express `req` and `res` objects.
-  - Strips `host` and `content-length` headers before forwarding the request.
+  - Strips `host`, `content-length`, and `authorization` headers before forwarding the request to prevent downstream re-validation.
+  - Injects trusted identity headers (`x-user-id`, `x-user-role`, `x-user-email`) derived from `req.user` and an `x-internal-secret` (from `INTERNAL_GATEWAY_SECRET`) to authenticate the request origin.
   - Forwards the downstream response (status and body) verbatim to the client.
 
 ---

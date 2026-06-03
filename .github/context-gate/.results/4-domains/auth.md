@@ -12,10 +12,14 @@ The `auth` domain handles edge JWT validation using a shared cryptographic secre
 **JWT Authentication Middleware (`packages/gateway/middleware/auth.js`):**
 ```javascript
 const PUBLIC_ROUTES = [
-  { path: '/health',            method: 'GET'  },
-  { path: '/api/v1/products',   method: 'GET'  },
-  { path: '/api/auth/login',    method: 'POST' },
-  { path: '/api/auth/register', method: 'POST' },
+  { path: '/health',                          method: 'GET'  },
+  { path: '/api/v1/products',                 method: 'GET'  },  // product listing
+  { path: '/api/v1/products/',                method: 'GET'  },  // trailing-slash variant
+  { path: '/api/auth/login',                  method: 'POST' },
+  { path: '/api/auth/register',               method: 'POST' },
+  { path: '/api/auth/refresh',                method: 'GET'  },  // refresh token uses its own mechanism
+  // ── Webhook routes — no JWT, secured by provider HMAC signature instead ──
+  { path: '/api/orders/webhook/paystack',     method: 'POST' },  // Paystack push events (HMAC-SHA512)
 ];
 
 function isPublicRoute(req) {

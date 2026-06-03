@@ -12,19 +12,30 @@
     "./src/components/Heritage.tsx",
     "./src/components/Newsletter.tsx",
     "./src/components/Footer.tsx",
+    "./src/components/AuthInitializer.tsx",
     "./src/pages/Catalog.tsx",
-    "./src/pages/Order.tsx"
+    "./src/pages/Order.tsx",
+    "./src/pages/Cart.tsx",
+    "./src/pages/Login.tsx",
+    "./src/pages/Register.tsx"
   ],
   "page-components": [
     "./src/pages/Catalog.tsx",
-    "./src/pages/Order.tsx"
+    "./src/pages/Order.tsx",
+    "./src/pages/Cart.tsx",
+    "./src/pages/Login.tsx",
+    "./src/pages/Register.tsx"
   ],
   "state-providers": [
-    "./src/context/CartContext.tsx"
+    "./src/context/CartContext.tsx",
+    "./src/store/index.ts",
+    "./src/store/slices/authSlice.ts",
+    "./src/store/hooks.ts"
   ],
   "layout-components": [
     "./src/components/Navbar.tsx",
     "./src/components/Footer.tsx",
+    "./src/components/AuthInitializer.tsx",
     "./src/App.tsx"
   ],
   "section-components": [
@@ -45,7 +56,9 @@
     "./src/hooks/useInView.ts"
   ],
   "lib-utilities": [
-    "./src/lib/supabase.ts"
+    "./src/lib/supabase.ts",
+    "./src/lib/apiClient.ts",
+    "./src/lib/tokenStore.ts"
   ],
   "types": [
     "./src/pages/Catalog.tsx",

@@ -2,27 +2,62 @@ import { z } from "zod";
 
 /**
  * Zod schema for Order creation.
+ * Supports multiple customization items in a single order.
  * Used by both the API and client to validate order requests.
- * Ensures type safety and runtime validation across boundaries.
  */
 
-export const OrderCreateSchema = z.object({
-  measurementId: z.string().cuid("Invalid measurement ID"),
-  productId: z.string().min(1, "Product ID is required"),
-  fabricOptionName: z.string().min(1, "Fabric selection is required"),
-  styleOptionName: z.string().min(1, "Style selection is required"),
-  colorName: z.string().optional(),
+/** Measurement snapshot supplied inline per customization item */
+const OrderMeasurementSchema = z.object({
+  chest:     z.number().positive("chest must be positive").optional(),
+  waist:     z.number().positive("waist must be positive").optional(),
+  hip:       z.number().positive("hip must be positive").optional(),
+  shoulder:  z.number().positive("shoulder must be positive").optional(),
+  armLength: z.number().positive("armLength must be positive").optional(),
+  length:    z.number().positive("length must be positive").optional(),
+  notes:     z.string().max(500).optional(),
+});
+
+/** One customised garment within an order */
+const OrderItemSchema = z.object({
+  productId: z.string().length(24, "productId must be a 24-character MongoDB ObjectId"),
+  /** Complete measurement data for this customization (stored as-is, no DB lookup). */
+  measurement: OrderMeasurementSchema,
+  /** MongoDB ObjectId of the chosen Fabric document, optionally including ::colorName (omit for standard/ready-to-wear) */
+  fabricId: z
+    .string()
+    .regex(/^[a-f\d]{24}(::.+)?$/i, "Invalid fabricId format")
+    .optional(),
+  // colorName is NOT accepted from the client — it is resolved from the fabric's
+  // properties (DB source of truth) when the fabric document is fetched.
+  styleOptionName: z.string().optional(),
   notes: z.string().max(1000, "Notes cannot exceed 1000 characters").optional(),
-  // Bespoke measurements (optional if measurementId is provided, but allowed inline)
-  chest: z.number().optional(),
-  waist: z.number().optional(),
-  hip: z.number().optional(),
-  shoulder: z.number().optional(),
-  armLength: z.number().optional(),
-  length: z.number().optional(),
+});
+
+export const OrderCreateSchema = z.object({
+  items: z
+    .array(OrderItemSchema)
+    .min(1, "At least one item is required")
+    .max(20, "Cannot exceed 20 items per order"),
+  promoCode: z.string().optional(),
+  /** Frontend-computed grand total for backend verification against pricing drift. */
+  expectedTotal: z.number().positive("expectedTotal must be positive").optional(),
+  delivery: z
+    .object({
+      fullName: z.string().min(1, "Full name is required"),
+      phoneNumber: z.string().min(1, "Phone number is required"),
+      address: z.string().min(1, "Address is required"),
+      city: z.string().min(1, "City is required"),
+      state: z.string().min(1, "State is required"),
+      country: z.string().min(1, "Country is required"),
+      deliveryMethod: z.enum(["standard", "express"]),
+    })
+    .optional(),
 });
 
 export type OrderCreate = z.infer<typeof OrderCreateSchema>;
+export type OrderItemCreate = z.infer<typeof OrderItemSchema>;
+export type OrderMeasurement = z.infer<typeof OrderMeasurementSchema>;
+
 
 /**
  * Schema for updating order status.

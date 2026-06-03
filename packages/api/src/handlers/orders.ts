@@ -18,7 +18,7 @@ export async function createOrderHandler(req: AuthenticatedRequest, res: Respons
     throw new AppError("User not authenticated", 401);
   }
 
-  const { order, paymentUrl, reference, accessCode } = await orderService.createOrder(req.user.id, req.body);
+  const { order, paymentUrl, reference, accessCode, breakdown } = await orderService.createOrder(req.user.id, req.body);
 
   res.status(201).json({
     msg: "order created successfully",
@@ -28,10 +28,8 @@ export async function createOrderHandler(req: AuthenticatedRequest, res: Respons
       status: order.status,
       reference,
       paymentUrl,
-      paystackAccessCode: (order as any).accessCode || accessCode,
-      measurement: {
-        profileName: (order as any).measurement?.profileName
-      }
+      paystackAccessCode: accessCode,
+      breakdown,
     },
     type: "SUCCESS",
     code: 600
@@ -50,45 +48,15 @@ export async function createPaymentIntentHandler(req: AuthenticatedRequest, res:
 
   const { orderId } = req.params;
 
-  // Get order details
-  const order = await orderService.getOrderById(req.user.id, orderId);
-
-  if (!order) {
-    throw new AppError("Order not found", 404);
-  }
-
-  // Check if order already has a confirmed/completed payment
-  // Only allow payment intent for PENDING orders
-  if (order.status !== "PENDING") {
-    throw new AppError(
-      `Cannot create payment intent for order with status: ${order.status}`,
-      400,
-      "INVALID_ORDER_STATUS"
-    );
-  }
-
-  // Initialize payment with Paystack (use totalAmount, not totalPrice)
-  const paymentRef = `order_${order.id}_${Date.now()}`;
-  const paymentIntent = await paystackService.initializePayment(
-    req.user.email,
-    order.totalAmount,
-    paymentRef,
-    {
-      orderId: order.id,
-      userId: req.user.id,
-      customerEmail: req.user.email,
-    }
+  const paymentIntent = await orderService.initializeOrderPayment(
+    req.user.id,
+    orderId,
+    req.user.email
   );
 
   res.json({
     msg: "payment intent created",
-    data: {
-      paystackAccessCode: paymentIntent.accessCode,
-      paystackAuthorizationUrl: paymentIntent.authorizationUrl,
-      reference: paymentIntent.reference,
-      orderId: order.id,
-      amount: order.totalAmount,
-    },
+    data: paymentIntent,
     type: "SUCCESS",
     code: 600
   });
@@ -126,7 +94,7 @@ export async function getUserOrdersHandler(req: AuthenticatedRequest, res: Respo
   }
 
   const skip = parseInt(req.query.skip as string) || 0;
-  const take = parseInt(req.query.take as string) || 10;
+  const take = parseInt(req.query.take as string) || 20;
 
   const result = await orderService.getUserOrders(req.user.id, skip, take);
 
@@ -196,8 +164,8 @@ export async function paystackWebhookHandler(req: Request, res: Response) {
   res.status(200).json({
     msg: "payment confirmed",
     data: {
-      orderId: result.order.id,
-      status: result.order.status,
+      orderId: result.order?.id,
+      status: result.order?.status || "CONFIRMED",
       alreadyProcessed: result.alreadyProcessed
     },
     type: "SUCCESS",
@@ -245,6 +213,28 @@ export async function getUserMeasurementsHandler(req: AuthenticatedRequest, res:
   res.status(200).json({
     msg: "user measurements retrieved",
     data: sanitizedMeasurements,
+    type: "SUCCESS",
+    code: 600
+  });
+}
+
+/**
+ * PUT /api/orders/measurements/:id
+ * Update an existing customer measurement profile.
+ */
+export async function updateMeasurementHandler(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
+
+  const { id } = req.params;
+  const measurement = await orderService.updateMeasurement(req.user.id, id, req.body);
+
+  const { createdAt: _, updatedAt: __, ...sanitizedMeasurement } = measurement as any;
+
+  res.status(200).json({
+    msg: "measurement profile updated",
+    data: sanitizedMeasurement,
     type: "SUCCESS",
     code: 600
   });

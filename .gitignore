@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 apps/user/
+apps/bolt/
 scratch/
 .pnp
 .pnp.js

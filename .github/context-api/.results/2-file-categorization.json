@@ -1,16 +1,11 @@
 {
   "api-handlers": [
-    "packages/api/src/handlers/adminProducts.ts",
     "packages/api/src/handlers/auth.ts",
-    "packages/api/src/handlers/orders.ts",
-    "packages/api/src/handlers/products.ts"
+    "packages/api/src/handlers/orders.ts"
   ],
   "api-services": [
     "packages/api/src/services/authService.ts",
-    "packages/api/src/services/uploadService.ts",
-    "packages/api/src/services/productService.ts",
     "packages/api/src/services/orderService.ts",
-    "packages/api/src/services/adminProductService.ts",
     "packages/api/src/services/pricingEngine.ts",
     "packages/api/src/services/paystackService.ts"
   ],
@@ -19,11 +14,8 @@
     "packages/api/src/handlers/orders.ts"
   ],
   "api-routes": [
-    "packages/api/src/routes/adminProducts.ts",
     "packages/api/src/routes/auth.ts",
-    "packages/api/src/routes/uploads.ts",
-    "packages/api/src/routes/orders.ts",
-    "packages/api/src/routes/products.ts"
+    "packages/api/src/routes/orders.ts"
   ],
   "api-middleware": [
     "packages/api/src/middleware/authenticate.ts",
@@ -31,11 +23,11 @@
     "packages/api/src/middleware/authorize.ts"
   ],
   "api-integrations": [
-    "packages/api/src/integrations/email/templates.ts",
-    "packages/api/src/services/uploadService.ts"
+    "packages/api/src/integrations/email/templates.ts"
   ],
   "api-queues": [
-    "packages/api/src/queues/notificationWorker.ts"
+    "packages/api/src/queues/notificationWorker.ts",
+    "packages/api/src/queues/catalogEventWorker.ts"
   ],
   "api-utils": [
     "packages/api/src/utils/asyncHandler.ts"

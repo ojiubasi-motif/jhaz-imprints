@@ -84,20 +84,15 @@ model Order {
   userId              String
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  // Snapshot of measurement at order time (not a live link)
-  measurementId       String
-  measurement         Measurement @relation(fields: [measurementId], references: [id])
+  // Measurement is now stored inline inside the items JSON array.
+  // The FK is retained for backward-compatibility with pre-migration orders.
+  measurementId       String?
+  measurement         Measurement? @relation(fields: [measurementId], references: [id])
   
-  // Product details (snapshot from MongoDB)
-  productId           String   // MongoDB ObjectId or Slug
-  styleOptionName     String
-  fabricOptionName    String
-  colorName           String?
+  // Array of items (customization details) stored as Json
+  // e.g. [{ productId, styleOptionName, fabricOptionName, colorName, basePrice, styleModifier, fabricModifier, notes }]
+  items               Json
   
-  // Price snapshots (for history)
-  basePrice           Float    @default(0)
-  styleModifier       Float    @default(0)
-  fabricModifier      Float    @default(0)
   // Order metadata
   status              OrderStatus @default(PENDING)
   totalAmount         Float

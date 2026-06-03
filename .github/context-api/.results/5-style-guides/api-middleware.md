@@ -5,28 +5,45 @@
 - **Function Signature**: Follow standard Express middleware signature `(req, res, next)`.
 - **Request Augmentation**: Use custom request types (e.g., `AuthenticatedRequest`) to add data like `req.user`.
 - **Error Handling**: Return a JSON error response or call `next(error)` for terminating middleware.
-- **Token Source**: `authenticate` reads the access token from the `Authorization: Bearer <token>` header ONLY. The `jwt` cookie is reserved for the refresh token and is NOT used for authenticated API requests.
+- **Gateway-Centric Verification**: The `authenticate` middleware expects requests to be routed through the API Gateway, carrying a valid `x-internal-secret` (matching `INTERNAL_GATEWAY_SECRET`) and forwarded identity headers (`x-user-id`, `x-user-role`, `x-user-email`).
 
 ## Implementation Patterns
 
 ### authenticate Middleware
-Verifies Bearer JWT and attaches `{ id, email, role }` to `req.user`. Returns a Quizio-style 401 on failure.
+Verifies request origin via internal gateway secret and maps pre-validated identity headers to `req.user`. Returns 403 for bypass attempts, or 401 if identity headers are missing.
 ```typescript
 export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+  const incomingSecret = req.headers["x-internal-secret"];
 
-  if (!token) {
-    return res.status(401).json({ msg: "Unauthorized: No token provided", data: null, type: "AUTHENTICATION_FAILED", code: 602 });
+  if (!INTERNAL_SECRET || incomingSecret !== INTERNAL_SECRET) {
+    return res.status(403).json({
+      msg: "Forbidden: Direct access to internal service is not permitted.",
+      data: null,
+      type: "GATEWAY_BYPASS_DETECTED",
+      code: 403,
+    });
   }
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string; email: string; role: string };
-    req.user = { id: decoded.id, email: decoded.email, role: decoded.role as "CUSTOMER" | "ADMIN" | "TAILOR" };
-    next();
-  } catch (error) {
-    return res.status(401).json({ msg: "Unauthorized: Invalid or expired token", data: null, type: "AUTHENTICATION_FAILED", code: 602 });
+  const userId    = req.headers["x-user-id"]    as string | undefined;
+  const userRole  = req.headers["x-user-role"]  as string | undefined;
+  const userEmail = req.headers["x-user-email"] as string | undefined;
+
+  if (!userId || !userRole) {
+    return res.status(401).json({
+      msg: "Unauthorized: Missing identity headers. Ensure the gateway is performing authentication.",
+      data: null,
+      type: "AUTHENTICATION_FAILED",
+      code: 401,
+    });
   }
+
+  req.user = {
+    id:    userId,
+    email: userEmail ?? "",
+    role:  userRole as "CUSTOMER" | "ADMIN" | "TAILOR",
+  };
+
+  next();
 }
 ```
 

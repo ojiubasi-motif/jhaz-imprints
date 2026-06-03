@@ -66,6 +66,13 @@ RUN pnpm install --frozen-lockfile --ignore-scripts --prod
 COPY --from=builder /app/packages/catalog-service/dist \
                     ./packages/catalog-service/dist
 
+# Copy categories.json data file alongside the compiled output.
+# categoryService.ts resolves it relative to the compiled server.js (i.e., dist/),
+# so it must live at packages/catalog-service/dist/categories.json at runtime.
+COPY --from=builder /app/packages/catalog-db/src/data/categories.json \
+                    ./packages/catalog-service/dist/categories.json
+
+
 # Copy built workspace packages into node_modules so the service can resolve them
 COPY --from=builder /app/packages/shared/dist \
                     ./node_modules/@jhaz-imprints/shared/dist

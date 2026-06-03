@@ -42,7 +42,7 @@ export async function startCatalogEventWorker() {
       );
 
       if (response && response.length > 0) {
-        const streamData = response[0];
+        const streamData = response[0] as any;
         const messages = streamData[1];
 
         for (const message of messages) {
@@ -93,9 +93,9 @@ async function processEvent(eventType: string, payload: any) {
             name: product.name,
             basePrice: product.basePrice,
             isActive: product.isActive ?? true,
-            fabricOptions: product.fabricOptions || [],
+            fabricOptions: [],
             styleOptions: product.styleOptions || [],
-            colorOptions: product.colorOptions || [],
+            colorOptions: [],
           },
           create: {
             id: product._id || product.id,
@@ -103,9 +103,9 @@ async function processEvent(eventType: string, payload: any) {
             name: product.name,
             basePrice: product.basePrice,
             isActive: product.isActive ?? true,
-            fabricOptions: product.fabricOptions || [],
+            fabricOptions: [],
             styleOptions: product.styleOptions || [],
-            colorOptions: product.colorOptions || [],
+            colorOptions: [],
           }
         });
         console.log(`[CatalogEventWorker] Upserted local cache for product: ${product.name}`);

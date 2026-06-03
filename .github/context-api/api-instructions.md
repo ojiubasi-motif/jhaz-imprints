@@ -25,7 +25,7 @@ This file provides architectural context, domain understanding, and stylistic gu
 
 ### **API Routes (`api-routes`)**
 - **Purpose**: URL mapping and middleware application.
-- **Examples**: `packages/api/src/routes/products.ts`, `packages/api/src/routes/orders.ts`.
+- **Examples**: `packages/api/src/routes/auth.ts`, `packages/api/src/routes/orders.ts`.
 - **Key Conventions**:
   - Use `express.Router()`.
   - Wrap all async handlers with `asyncHandler()` from `src/utils/asyncHandler.ts`.
@@ -53,13 +53,13 @@ This file provides architectural context, domain understanding, and stylistic gu
 
 ## 3. Feature Scaffold Guide
 
-When implementing a new feature (e.g., "Product Reviews"):
+When implementing a new feature (e.g., "User Addresses"):
 
-1.  **Define Schema**: Create `packages/shared/src/schemas/review.schema.ts`.
-2.  **Add Model**: Update `packages/catalog-db/src/models/Product.model.ts` or add a new model.
-3.  **Create Service**: Implement `packages/api/src/services/reviewService.ts`. Ensure that if you need cross-database consistency, you fetch context from Mongoose first and pass the strictly validated data into a Prisma `$transaction` block.
-4.  **Implement Handler**: Create `packages/api/src/handlers/reviews.ts`.
-5.  **Register Route**: Create `packages/api/src/routes/reviews.ts` and mount in `app.ts`.
+1.  **Define Schema**: Create `packages/shared/src/schemas/address.schema.ts`.
+2.  **Add Model**: Add `Address` model under Prisma schema `schema.prisma`.
+3.  **Create Service**: Implement `packages/api/src/services/addressService.ts`. Ensure all queries use `prisma` client.
+4.  **Implement Handler**: Create `packages/api/src/handlers/addresses.ts`.
+5.  **Register Route**: Create `packages/api/src/routes/addresses.ts` and mount in `app.ts`.
 
 ### **Naming & Placement**
 - Handlers: `packages/api/src/handlers/{domain}.ts`.
@@ -72,20 +72,18 @@ When implementing a new feature (e.g., "Product Reviews"):
 
 - **Response Format**: **Mandatory Quizio Envelope.** Success code 600, error codes 602/605. Exception: DELETE endpoints return `204 No Content` with no body.
 - **Sanitization**: **Strictly sanitize all responses.** Never return `password`, `refreshToken`, `createdAt`, or `updatedAt` to the client.
-- **Auth Strategy**: **HTTP-only Cookies.** The refresh token is stored in a cookie named `jwt` and MUST be persisted in the database for rotation/invalidation. All refresh requests must rotate the token. The access token is returned in the response body. API request authentication uses the `Authorization: Bearer <token>` header ONLY — cookies are NOT used for API auth.
+- **Auth Strategy**: **Gateway-Centric Request Authentication.** Requests to protected API endpoints are authenticated by the gateway, which forwards trusted identity headers (`x-user-id`, `x-user-role`, `x-user-email`). Dual-tokens (1d access, 30m refresh with cookie-based rotation) are issued directly by the auth handlers.
 - **Database**:
-  - Use **Prisma** for Relational/Auth/Order data.
-  - Use **Mongoose** for Product/Catalog data. Use `.lean()` for all read operations.
+  - Relational operations use **Prisma** (PostgreSQL) exclusively.
+  - Catalog/Product data is read from the local `CachedProduct` PostgreSQL table. MongoDB is not queried directly at runtime.
 - **Order Snapshotting**: When creating an order, ALWAYS save snapshots of the product details (Name, selected Option names, and Price Modifiers) in the Prisma `Order` table. This ensures historical accuracy even if the product catalog changes later.
 - **Payment Intent Lifecycle**: The order creation flow is: (1) Create order + payment record in Prisma with `PENDING` status → (2) Initialize transaction with Paystack to get `authorizationUrl`/`accessCode` → (3) Frontend redirects user or opens `PaystackPop` → (4) Paystack fires webhook OR frontend calls `POST /verify/:reference` → (5) Service verifies with Paystack API, then updates order to `CONFIRMED` atomically.
-- **Augmented Responses**: When returning orders (GET `/orders/:id` or `/orders/my-orders`), the service should fetch the order from Prisma and then "augment" it by fetching the latest product images and name from MongoDB.
+- **Augmented Responses**: When returning orders (GET `/orders/:id` or `/orders/my-orders`), the service fetches the order from Prisma and augments it by fetching product details from the local `CachedProduct` table.
 - **Validation & Defensive Programming**: 
   - **Always validate inputs** using `@jhaz-imprints/shared` Zod schemas. 
-  - **Strict String Matching**: When comparing frontend payloads with database strings (especially Mongoose subdocuments like `fabricOptions`), ALWAYS use `.trim().toLowerCase()` to prevent invisible character mismatch errors.
+  - **Strict String Matching**: When comparing frontend payloads with database strings (especially CachedProduct fields like `fabricOptions`), ALWAYS use `.trim().toLowerCase()` to prevent invisible character mismatch errors.
   - **Resilient Fallback**: If a selected product option (fabric/style) is missing from the catalog, fallback to "Standard" or "Original" if available, rather than crashing the request.
   - **Explicit Errors**: When throwing an `AppError` due to a mismatch, include the explicitly available DB string options in the error message for faster frontend debugging.
-- **Pagination**: Use `mongoose-paginate-v2` for all public-facing catalog listings.
-- **Image Uploads**: Use the `POST /api/v1/admin/uploads` endpoint (ADMIN only, `multer` in-memory) to upload to Cloudinary. Images are auto-converted to WebP and stored in the `jhaz-imprints/products` folder. Always validate returned URLs before using them in `createProduct` payloads.
 - **Background Notifications**: After confirming a payment, enqueue an `order-confirmed` BullMQ job. The worker sends two emails: one to the customer and one to `ADMIN_EMAIL`. Each email send is isolated in `try/catch` — one failure must not block the other.
 
 ---
@@ -104,10 +102,10 @@ When implementing a new feature (e.g., "Product Reviews"):
 
 ### Example: Order Data Augmentation
 
-When implementing a feature that displays order history, ensure data from both databases is combined:
+When implementing a feature that displays order history, ensure order and catalog cache data is combined:
 
 - **Relational Data**: Fetch the core order details (status, total, date, snapshots) from Prisma.
-- **Document Data**: For each order, fetch the current product name, category, and primary image from MongoDB (using `productService.getProductByIdOrSlug`).
+- **Document Data**: For each order, fetch the product name, category, and primary image from the local database cache (using `getCachedProductByIdOrSlug`).
 - **Merging**: Combine these objects before returning the response. This pattern ensures the frontend has rich, up-to-date visual data without bloating the relational schema.
 - **Performance**: Use `Promise.all` when augmenting multiple orders to avoid sequential N+1 query bottlenecks.
-- **Safety**: Always handle cases where a product might have been deleted from the catalog by using optional chaining and nullish coalescing on augmented fields.
+- **Safety**: Always handle cases where a product might have been deleted from the catalog cache by using optional chaining and nullish coalescing on augmented fields.
