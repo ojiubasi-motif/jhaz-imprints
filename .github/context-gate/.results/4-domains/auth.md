@@ -15,6 +15,10 @@ const PUBLIC_ROUTES = [
   { path: '/health',                          method: 'GET'  },
   { path: '/api/v1/products',                 method: 'GET'  },  // product listing
   { path: '/api/v1/products/',                method: 'GET'  },  // trailing-slash variant
+  { path: '/api/v1/categories',               method: 'GET'  },  // categories listing
+  { path: '/api/v1/categories/',              method: 'GET'  },
+  { path: '/api/v1/fabrics',                  method: 'GET'  },  // fabrics listing
+  { path: '/api/v1/fabrics/',                 method: 'GET'  },
   { path: '/api/auth/login',                  method: 'POST' },
   { path: '/api/auth/register',               method: 'POST' },
   { path: '/api/auth/refresh',                method: 'GET'  },  // refresh token uses its own mechanism
@@ -23,35 +27,56 @@ const PUBLIC_ROUTES = [
 ];
 
 function isPublicRoute(req) {
+  // Exact-match check
   const exactMatch = PUBLIC_ROUTES.some(
     (route) => req.path === route.path && req.method === route.method,
   );
   if (exactMatch) return true;
-  // Product detail pages are also public: GET /api/v1/products/:id
+
+  // Product detail pages are public: GET /api/v1/products/<anything>
   if (req.method === 'GET' && /^\/api\/v1\/products\/[^/]+$/.test(req.path)) {
     return true;
   }
+
   return false;
 }
 
 function authenticateToken(req, res, next) {
-  if (isPublicRoute(req)) return next();
+  // Skip validation for public routes.
+  if (isPublicRoute(req)) {
+    return next();
+  }
 
   const authHeader = req.headers['authorization'];
+  // Expected format: "Bearer <token>"
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'MISSING_TOKEN', message: 'Token is required.' });
+    return res.status(401).json({
+      error:   'MISSING_TOKEN',
+      message: 'Authorization token is required.',
+    });
   }
 
   try {
+    // jwt.verify throws synchronously if the token is invalid or expired.
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    req.userId = decoded.sub || decoded.id;
+
+    // Attach decoded claims for downstream middleware.
+    req.user     = decoded;
+    req.userId   = decoded.sub || decoded.id;
     req.userRole = decoded.role;
+
   } catch (err) {
-    return res.status(401).json({ error: 'INVALID_TOKEN' });
+    const isExpired = err.name === 'TokenExpiredError';
+    return res.status(401).json({
+      error:   isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+      message: isExpired
+        ? 'Your session has expired. Please log in again.'
+        : 'The provided token is invalid.',
+    });
   }
+
   next();
 }
 ```

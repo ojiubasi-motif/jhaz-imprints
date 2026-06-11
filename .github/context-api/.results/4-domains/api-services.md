@@ -5,70 +5,166 @@
 - **Stateless Logic**: Services are typically static classes or exported async functions that take inputs and return data.
 - **Transactional Integrity**: Uses Prisma `$transaction` for operations requiring atomicity across multiple tables.
 - **Error Propagation**: Throws custom `AppError` instances with status codes and specific error codes.
-- **Cached Database Orchestration**: Instead of querying MongoDB directly at runtime, the API service queries a local cache replica (`CachedProduct` in PostgreSQL) which is populated by Redis streams.
+- **Cached Database Orchestration**: Catalog events are replicated to a local cache replica (`CachedProduct` in PostgreSQL) which is populated by Redis streams. However, standard transactional logic queries the live catalog MongoDB collections directly to ensure real-time consistency.
 
 ## Code Examples
 
 ### Transactional Service Pattern (with Defensive Validation & Order Snapshotting)
 ```typescript
 export async function createOrder(userId: string, input: CreateOrderInput) {
-  // 1. Fetch catalog context from PostgreSQL Cache
-  const product = await getCachedProductByIdOrSlug(input.productId);
-  if (!product) throw new AppError("Product not found", 404);
-
-  // 2. Defensive String Matching for options
-  const inputFabricSafe = (input.fabricOptionName ?? "Standard").trim().toLowerCase();
-  const inputStyleSafe = (input.styleOptionName ?? "Standard").trim().toLowerCase();
-
-  // 3. Resilient Fallback for options
-  const fabricOptions = product.fabricOptions as Array<{ name: string; priceModifier: number }>;
-  let fabricOption = fabricOptions.find(
-    (f) => f.name.trim().toLowerCase() === inputFabricSafe
-  );
-  if (!fabricOption && fabricOptions.length === 0) {
-    fabricOption = { name: "Standard", priceModifier: 0 }; // Fallback
+  // 1. Pre-flight validation — NO database calls yet
+  if (!input.items || !Array.isArray(input.items) || input.items.length === 0) {
+    throw new AppError("No items provided in the order", 400);
   }
 
-  // 4. Perform atomic update in PostgreSQL
-  const createdOrder = await prisma.$transaction(async (tx) => {
-    const newOrder = await tx.order.create({
-      data: { 
-        userId, 
-        productId: input.productId,
-        measurementId: input.measurementId,
-        // Snapshot catalog details for history
-        styleOptionName: input.styleOptionName,
-        fabricOptionName: input.fabricOptionName,
-        colorName: input.colorName,
-        basePrice: product.basePrice,
-        styleModifier: styleOption.priceModifier,
-        fabricModifier: fabricOption.priceModifier,
-        totalAmount, 
-        status: "PENDING" 
+  const OBJECT_ID_RE = /^[a-f\d]{24}$/i;
+  const FABRIC_ID_RE = /^[a-f\d]{24}(::.+)?$/i;
+
+  for (const item of input.items) {
+    if (!item.productId || !OBJECT_ID_RE.test(item.productId)) {
+      throw new AppError(`Invalid or missing productId: "${item.productId ?? ""}"`, 400);
+    }
+    if (item.fabricId !== undefined && !FABRIC_ID_RE.test(item.fabricId)) {
+      throw new AppError(`Invalid fabricId format: "${item.fabricId}"`, 400);
+    }
+  }
+
+  // 2. Fetch catalog details directly from MongoDB (via Mongoose models)
+  const allOrders: any[] = [];
+  let totalOrderAmount = 0;
+
+  for (const item of input.items) {
+    const mongoProduct = await Product.findById(item.productId).lean();
+    if (!mongoProduct) {
+      throw new AppError(`Product not found: productId=${item.productId}`, 404);
+    }
+
+    let fabricPriceModifier = 0;
+    let resolvedFabricName = "Standard";
+    let resolvedFabricId: string | null = null;
+    let yardsPerUnit = 1.0;
+    let fabricUnit = "yard";
+
+    if (item.fabricId) {
+      const [cleanFabricId, selectedColorName] = item.fabricId.split("::");
+      const fabricDoc = await Fabric.findById(cleanFabricId).lean();
+      if (!fabricDoc) {
+        throw new AppError(`Fabric not found: fabricId=${cleanFabricId}`, 404);
       }
+
+      let prop = null;
+      if (selectedColorName && fabricDoc.properties) {
+        prop = fabricDoc.properties.find(
+          (p) => p.colorName.toLowerCase() === selectedColorName.toLowerCase()
+        ) ?? null;
+      }
+      if (!prop && fabricDoc.properties && fabricDoc.properties.length > 0) {
+        prop = fabricDoc.properties[0];
+      }
+
+      fabricPriceModifier = prop?.priceModifier ?? 0;
+      resolvedFabricName = prop ? `${fabricDoc.name} — ${prop.colorName}` : fabricDoc.name;
+      resolvedFabricId = cleanFabricId;
+      yardsPerUnit = prop?.yardsPerUnit ?? 1.0;
+      fabricUnit = prop?.unit ?? "yard";
+    }
+
+    const estimatedYards = calculateFabricYards(item.measurement);
+    const unitsNeeded = Math.ceil(estimatedYards / yardsPerUnit);
+    const totalFabricModifier = fabricPriceModifier * unitsNeeded;
+
+    const inputStyleSafe = (item.styleOptionName ?? "Standard").trim();
+    let stylePriceModifier = 0;
+    let resolvedStyleName = inputStyleSafe;
+
+    if (inputStyleSafe.toLowerCase() !== "standard" && inputStyleSafe.toLowerCase() !== "original") {
+      const styleOpt = mongoProduct.styleOptions?.find(
+        (s) => s.name.toLowerCase() === inputStyleSafe.toLowerCase()
+      );
+      if (!styleOpt) {
+        throw new AppError(`Style option "${inputStyleSafe}" not found`, 404);
+      }
+      stylePriceModifier = styleOpt.priceModifier ?? 0;
+      resolvedStyleName = styleOpt.name;
+    }
+
+    const itemTotal = computeOrderTotal({
+      basePrice: mongoProduct.basePrice,
+      fabricPriceModifier: totalFabricModifier,
+      stylePriceModifier,
     });
-    // ... create payment record
-    return { order: newOrder, reference };
+
+    totalOrderAmount += itemTotal;
+
+    allOrders.push({
+      productId: item.productId,
+      productName: mongoProduct.name,
+      measurement: item.measurement,
+      fabricId: resolvedFabricId,
+      fabricOptionName: resolvedFabricName,
+      styleOptionName: resolvedStyleName,
+      colorName: resolvedFabricName.includes(" — ") ? resolvedFabricName.split(" — ")[1] : null,
+      basePrice: mongoProduct.basePrice,
+      styleModifier: stylePriceModifier,
+      fabricPricePerUnit: fabricPriceModifier,
+      fabricQty: unitsNeeded,
+      fabricUnit: fabricUnit,
+      fabricYards: estimatedYards,
+      yardsPerUnit: yardsPerUnit,
+      fabricModifier: totalFabricModifier,
+      totalAmount: itemTotal,
+      notes: item.notes ?? null,
+    });
+  }
+
+  // 3. Verify price integrity
+  let deliveryFee = 0;
+  if (input.delivery) {
+    deliveryFee = input.delivery.deliveryMethod === "express" ? 7500 : 3500;
+  }
+  let discount = 0;
+  if (input.promoCode === "JHAZ10") {
+    discount = (totalOrderAmount + deliveryFee) * 0.1;
+  }
+  const grandTotal = totalOrderAmount + deliveryFee - discount;
+
+  if (input.expectedTotal !== undefined && Math.abs(grandTotal - input.expectedTotal) > 1) {
+    throw new AppError(`Price mismatch`, 409);
+  }
+
+  const notesMetadata = JSON.stringify({
+    delivery: input.delivery,
+    promoCode: input.promoCode,
   });
 
-  return createdOrder;
-}
-```
+  // 4. Perform atomic update in PostgreSQL (saving inline JSON snapshots)
+  const result = await prisma.$transaction(async (tx) => {
+    const newOrder = await tx.order.create({
+      data: {
+        userId,
+        items: allOrders,
+        totalAmount: grandTotal,
+        status: "PENDING",
+        notes: notesMetadata,
+      },
+      include: { user: true },
+    });
 
-### Data Augmentation Pattern (Cached Product Lookup)
-When fetching orders, services should bridge the relational order data with catalog data from the local `CachedProduct` replica.
-```typescript
-export async function getOrderById(userId: string, orderId: string) {
-  const order = await prisma.order.findUnique({ where: { id: orderId } });
-  if (!order) throw new AppError("Order not found", 404);
+    const reference = `order_${newOrder.id}_${Date.now()}`;
+    const payment = await tx.payment.create({
+      data: {
+        orderId: newOrder.id,
+        amount: grandTotal,
+        status: "PENDING",
+        reference,
+        provider: "PAYSTACK",
+      },
+    });
 
-  // Augment with rich product data from local SQL cache
-  const localProduct = await getCachedProductByIdOrSlug(order.productId);
-  
-  return {
-    ...order,
-    product: localProduct || null,
-  };
+    return { order: newOrder, payment, reference };
+  });
+
+  return result;
 }
 ```
 
@@ -119,19 +215,6 @@ Example: `getUserMeasurements` and `createMeasurement`
 export async function getUserMeasurements(userId: string) {
   return prisma.measurement.findMany({
     where: { userId },
-    select: {
-      id: true,
-      profileName: true,
-      chest: true,
-      waist: true,
-      hip: true,
-      shoulder: true,
-      armLength: true,
-      length: true,
-      notes: true,
-      isDefault: true,
-      createdAt: true
-    },
     orderBy: { createdAt: 'desc' }
   });
 }
@@ -142,36 +225,4 @@ export async function createMeasurement(userId: string, input: MeasurementCreate
   });
   return measurement;
 }
-```
-
-Guidance:
-- Services should not return raw Prisma models with `createdAt`/`updatedAt` — handlers must sanitize before sending to clients.
-- Prefer `select` projections in service queries when the full model is not required by downstream logic.
-
-### Parallel Order Augmentation (N+1 Prevention)
-When augmenting multiple orders, query the local database Cache. Always handle missing products gracefully with `try/catch` and fallback to `null`.
-```typescript
-export async function getUserOrders(userId: string, skip = 0, take = 10) {
-  const orders = await prisma.order.findMany({
-    where: { userId },
-    include: { measurement: true, payment: true, statusHistory: true },
-    skip,
-    take,
-    orderBy: { createdAt: "desc" },
-  });
-
-  const augmentedOrders = await Promise.all(
-    orders.map(async (order) => {
-      let product = null;
-      try {
-        product = await getCachedProductByIdOrSlug(order.productId);
-      } catch {
-        // Product may have been deleted; return order without product data
-      }
-      return { ...order, product: product || null };
-    })
-  );
-
-  return { orders: augmentedOrders, total: await prisma.order.count({ where: { userId } }), skip, take };
-}
-```
+`````

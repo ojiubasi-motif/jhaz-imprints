@@ -55,13 +55,23 @@ export const loginHandler = async (req: Request, res: Response) => {
 ### Delegation to Service
 ```typescript
 export async function createOrderHandler(req: AuthenticatedRequest, res: Response) {
-  if (!req.user) throw new AppError("User not authenticated", 401);
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
 
-  const result = await orderService.createOrder(req.user.id, req.body);
+  const { order, paymentUrl, reference, accessCode, breakdown } = await orderService.createOrder(req.user.id, req.body);
 
   res.status(201).json({
-    msg: "order created",
-    data: result,
+    msg: "order created successfully",
+    data: {
+      orderId: order.id,
+      totalAmount: order.totalAmount,
+      status: order.status,
+      reference,
+      paymentUrl,
+      paystackAccessCode: accessCode,
+      breakdown,
+    },
     type: "SUCCESS",
     code: 600
   });
@@ -69,26 +79,24 @@ export async function createOrderHandler(req: AuthenticatedRequest, res: Respons
 ```
 
 ### Payment Intent Handler
-Handlers that initialize a payment session return the Paystack `accessCode` (for `PaystackPop` modal) and `authorizationUrl` (for redirect flows). Guard against non-PENDING orders before calling `initializePayment`.
+Handlers that initialize a payment session return the Paystack transaction payload. Guard against non-PENDING orders before initializing payment.
 ```typescript
 export async function createPaymentIntentHandler(req: AuthenticatedRequest, res: Response) {
-  if (!req.user) throw new AppError("User not authenticated", 401);
-  const { orderId } = req.params;
-  const order = await orderService.getOrderById(req.user.id, orderId);
-  if (order.status !== "PENDING") {
-    throw new AppError(`Cannot create payment intent for order with status: ${order.status}`, 400, "INVALID_ORDER_STATUS");
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
   }
-  const paymentRef = `order_${order.id}_${Date.now()}`;
-  const paymentIntent = await paystackService.initializePayment(req.user.email, order.totalAmount, paymentRef, { orderId: order.id, userId: req.user.id });
+
+  const { orderId } = req.params;
+
+  const paymentIntent = await orderService.initializeOrderPayment(
+    req.user.id,
+    orderId,
+    req.user.email
+  );
+
   res.json({
     msg: "payment intent created",
-    data: {
-      paystackAccessCode: paymentIntent.accessCode,
-      paystackAuthorizationUrl: paymentIntent.authorizationUrl,
-      reference: paymentIntent.reference,
-      orderId: order.id,
-      amount: order.totalAmount,
-    },
+    data: paymentIntent,
     type: "SUCCESS",
     code: 600
   });
@@ -99,25 +107,27 @@ export async function createPaymentIntentHandler(req: AuthenticatedRequest, res:
 Called by the frontend after Paystack redirect. Delegates to the same `orderService.confirmPayment` as the Paystack webhook — idempotency is handled at the service level.
 ```typescript
 export async function verifyPaymentHandler(req: AuthenticatedRequest, res: Response) {
-  if (!req.user) throw new AppError("User not authenticated", 401);
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
+
   const { reference } = req.params;
+
+  if (!reference) {
+    throw new AppError("Payment reference is required", 400);
+  }
+
   const result = await orderService.confirmPayment(reference);
+
   res.json({
     msg: "payment verified successfully",
-    data: { orderId: result.order?.id, status: result.order?.status || "CONFIRMED", alreadyProcessed: result.alreadyProcessed },
+    data: {
+      orderId: result.order?.id,
+      status: result.order?.status || "CONFIRMED",
+      alreadyProcessed: result.alreadyProcessed
+    },
     type: "SUCCESS",
     code: 600
   });
-}
-```
-
-### Admin Deletion Pattern (204 No Content)
-Delete handlers use `res.status(204).send()` with no body — NOT a Quizio envelope.
-```typescript
-export async function deleteProductHandler(req: AuthenticatedRequest, res: Response) {
-  const { id } = req.params;
-  if (!/^[a-f\d]{24}$/i.test(id)) throw new AppError("Invalid product ID", 400);
-  await adminProductService.deleteProduct(id);
-  res.status(204).send();
 }
 ```

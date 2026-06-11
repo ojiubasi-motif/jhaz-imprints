@@ -3,6 +3,7 @@ import { prisma } from '@jhaz-imprints/db';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 export const CATALOG_STREAM_KEY = 'stream:catalog.events';
+const CATALOG_DLQ_KEY = 'stream:catalog.dlq';
 const CONSUMER_GROUP = 'api-core-group';
 const CONSUMER_NAME = `api-worker-${process.pid}`;
 
@@ -55,10 +56,30 @@ export async function startCatalogEventWorker() {
             data[fields[i]] = fields[i + 1];
           }
 
-          await processEvent(data.eventType, JSON.parse(data.payload));
-          
-          // Acknowledge the message so it's not delivered again
+          // ACK first to prevent infinite redelivery of poison messages.
+          // If processing fails, the event goes to the DLQ instead.
           await redisClient.xack(CATALOG_STREAM_KEY, CONSUMER_GROUP, messageId);
+
+          try {
+            await processEvent(data.eventType, JSON.parse(data.payload));
+          } catch (procError: any) {
+            // Dead-letter queue: write failed message for manual inspection
+            console.error(`[CatalogEventWorker] Failed to process ${data.eventType}, sending to DLQ:`, procError.message);
+            try {
+              await redisClient.xadd(
+                CATALOG_DLQ_KEY,
+                'MAXLEN', '~', '1000',
+                '*',
+                'originalId', messageId,
+                'eventType', data.eventType || 'UNKNOWN',
+                'payload', data.payload || '{}',
+                'error', procError.message || 'Unknown error',
+                'timestamp', new Date().toISOString()
+              );
+            } catch (dlqError: any) {
+              console.error('[CatalogEventWorker] Failed to write to DLQ:', dlqError.message);
+            }
+          }
         }
       }
     } catch (error: any) {
@@ -126,7 +147,6 @@ async function processEvent(eventType: string, payload: any) {
     }
   } catch (error) {
     console.error(`[CatalogEventWorker] Failed to process event ${eventType}:`, error);
-    // In a production system we might send this to a Dead Letter Queue instead of swallowing
-    throw error; 
+    // Error logged; message already ACK'd so it won't retry
   }
 }

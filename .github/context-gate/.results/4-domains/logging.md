@@ -12,23 +12,25 @@ The `logging` domain handles structured request-response logging at the edge of 
 **Structured Request Logging Middleware (`packages/gateway/middleware/logger.js`):**
 ```javascript
 function requestLogger(req, res, next) {
-  const startTime = process.hrtime();
+  // Record the moment the request arrived at the gateway.
+  const startTime = Date.now();
 
+  // Once Express finishes sending the response, build and emit the log entry.
   res.on('finish', () => {
-    const duration = process.hrtime(startTime);
-    const durationMs = Math.round(duration[0] * 1000 + duration[1] / 1e6);
+    const durationMs = Date.now() - startTime;
 
     const logEntry = {
       timestamp:   new Date().toISOString(),
       method:      req.method,
-      path:        req.path,
-      userId:      req.userId || 'anonymous',
+      path:        req.originalUrl,
+      userId:      req.userId   || 'anonymous',
       userRole:    req.userRole || 'public',
       statusCode:  res.statusCode,
       durationMs,
       destination: req.proxyDestination || 'gateway',
     };
 
+    // console.log outputs to stdout — pipe to a log shipper in production.
     console.log(JSON.stringify(logEntry));
   });
 

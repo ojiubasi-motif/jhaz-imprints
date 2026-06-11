@@ -3,7 +3,7 @@
  */
 
 import express, { Request, Response, NextFunction } from "express";
-import cors from "cors";
+// CORS is NOT configured here — this service is internal only (gateway handles CORS).
 import cookieParser from "cookie-parser";
 import { connectMongoDB } from "@jhaz-imprints/catalog-db";
 import { prisma } from "@jhaz-imprints/db";
@@ -18,10 +18,11 @@ const app = express();
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: true,
-  credentials: true,
-}));
+
+// Paystack webhook needs the raw body bytes for HMAC-SHA512 signature verification.
+// This MUST come before express.json() so the body isn't parsed first.
+app.use('/api/orders/webhook/paystack', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -114,12 +115,20 @@ app.use((req: Request, res: Response) => {
   });
 });
 
-// Graceful shutdown
-process.on("SIGINT", async () => {
-  console.log("[App] Shutting down gracefully...");
-  import("./queues/catalogEventWorker").then(({ stopCatalogEventWorker }) => stopCatalogEventWorker());
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+// Railway sends SIGTERM on deploy/restart.
+async function gracefulShutdown(signal: string) {
+  console.log(`[App] ${signal} received — shutting down gracefully...`);
+  try {
+    const { stopCatalogEventWorker } = await import("./queues/catalogEventWorker");
+    stopCatalogEventWorker();
+  } catch { /* worker may not be initialized */ }
   await prisma.$disconnect();
+  console.log("[App] All connections closed. Exiting.");
   process.exit(0);
-});
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 export default app;

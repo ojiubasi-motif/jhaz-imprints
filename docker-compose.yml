@@ -201,10 +201,8 @@ services:
     image: postgres:15-alpine
     container_name: jhaz-postgres
     restart: unless-stopped
-    # Host port intentionally removed — PostgreSQL is internal to catalog-net only.
+    # No host port — PostgreSQL is internal to catalog-net only.
     # To inspect locally: docker exec -it jhaz-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB
-    ports:
-      - "5433:5432"   # pgAdmin / local tools connect on localhost:5433
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -233,7 +231,7 @@ services:
     restart: on-failure:5
     # No host port exposed — only accessible via the gateway on port 8080.
     environment:
-      NODE_ENV: development  # 'development' prevents Secure flag on cookies (needed for local http testing)
+      NODE_ENV: production
       PORT: 5000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-ATlag1991}@postgres:5432/${POSTGRES_DB:-jhaz-imprints}?schema=public
       MONGODB_URI: ${MONGODB_URI}

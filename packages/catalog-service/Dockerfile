@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────
 # Base: pnpm on Alpine
 # ─────────────────────────────────────────────
-FROM node:24-alpine AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 
 # ─────────────────────────────────────────────
 # Stage 1: Build

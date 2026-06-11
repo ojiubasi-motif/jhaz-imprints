@@ -52,7 +52,7 @@ Everything documented here is derived from actual, observed patterns within this
 - **Examples**: `packages/gateway/lib/proxyRequest.js`
 - **Key Conventions**:
   - Stateless helper functions that accept the Express `req` and `res` objects.
-  - Strips `host`, `content-length`, and `authorization` headers before forwarding the request to prevent downstream re-validation.
+  - Strips `host` and `authorization` headers before forwarding the request to prevent downstream re-validation. Strips `content-length` for normal requests but preserves it for `multipart/*` uploads to allow downstream processing of file streams.
   - Injects trusted identity headers (`x-user-id`, `x-user-role`, `x-user-email`) derived from `req.user` and an `x-internal-secret` (from `INTERNAL_GATEWAY_SECRET`) to authenticate the request origin.
   - Forwards the downstream response (status and body) verbatim to the client.
 

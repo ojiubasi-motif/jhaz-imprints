@@ -12,8 +12,13 @@ The `routing` domain resolves which downstream microservice handles an incoming 
 **Longest-Prefix Matching (`packages/gateway/routes/index.js`):**
 ```javascript
 const SERVICE_MAP = {
-  '/api/v1/products': process.env.CATALOG_SERVICE_URL,
-  '/api/v1/admin':    process.env.CATALOG_SERVICE_URL,
+  // Catalog microservice — products, admin product management, uploads
+  '/api/v1/products':   process.env.CATALOG_SERVICE_URL,
+  '/api/v1/categories': process.env.CATALOG_SERVICE_URL,
+  '/api/v1/fabrics':    process.env.CATALOG_SERVICE_URL,
+  '/api/v1/admin':      process.env.CATALOG_SERVICE_URL,
+
+  // Core API — auth, orders
   '/api/auth':        process.env.CORE_API_URL,
   '/api/orders':      process.env.CORE_API_URL,
 };

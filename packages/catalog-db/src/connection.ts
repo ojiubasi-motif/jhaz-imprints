@@ -28,8 +28,11 @@ export async function connectMongoDB(retryAttempt = 0): Promise<Connection> {
     await mongoose.connect(MONGODB_URI, {
       maxPoolSize: 10,
       minPoolSize: 2,
-      socketTimeoutMS: 30000,
-      serverSelectionTimeoutMS: 30000,
+      maxIdleTimeMS: 30000,              // Close idle connections after 30s
+      serverSelectionTimeoutMS: 5000,     // Fail fast if no server available
+      socketTimeoutMS: 45000,
+      retryWrites: true,
+      w: 'majority',                     // Write concern for data durability
     });
 
     connection = mongoose.connection;

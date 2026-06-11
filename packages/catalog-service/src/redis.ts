@@ -20,6 +20,7 @@ export async function publishCatalogEvent(eventType: string, payload: any) {
   try {
     await redisPublisher.xadd(
       CATALOG_STREAM_KEY,
+      'MAXLEN', '~', '10000',  // Cap stream at ~10k entries to prevent unbounded growth
       '*', // Auto-generate ID
       'eventType', eventType,
       'payload', JSON.stringify(payload)

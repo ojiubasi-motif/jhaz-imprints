@@ -5,8 +5,8 @@
 - **Programming Language**: TypeScript
 - **Primary Framework**: Express.js (REST API)
 - **Database Layers**:
-    - **PostgreSQL (via Prisma)**: Managed in `@jhaz-imprints/db`. Used for users, auth, relational data, and local catalog cache (`cachedProduct`).
-    - **MongoDB (via Mongoose)**: Not directly read/written at runtime by this package. MongoDB catalog events are replicated to PostgreSQL's `CachedProduct` table via Redis Streams.
+    - **PostgreSQL (via Prisma)**: Managed in `@jhaz-imprints/db`. Used for users, auth, relational data, and local catalog cache (`CachedProduct`).
+    - **MongoDB (via Mongoose)**: Directly read at runtime by this package. MongoDB catalog events (products and fabrics) are read from MongoDB using Mongoose models (from `@jhaz-imprints/catalog-db`) during checkout and order validation. Catalog events are also replicated to PostgreSQL's `CachedProduct` table via Redis Streams.
 - **Authentication**: Gateway-centric authentication. JWT validation is handled by the API Gateway. The API verifies incoming request origin via `x-internal-secret` and extracts pre-validated user identity from `x-user-id`, `x-user-role`, `x-user-email` headers. (Standard login/register endpoints are still exposed, issuing dual-tokens: 1d access, 30m refresh, with rotation via HTTP-only cookies).
 - **Background Tasks**: BullMQ (Redis-backed queue for notification jobs) and Redis stream consumer for Catalog Event Replication (`catalogEventWorker`).
 - **External Services**:
@@ -40,7 +40,7 @@
     - RESTful API endpoints for web and mobile clients (User / Orders / Auth).
     - Database migrations and schema management.
     - Event replication worker listening to Redis stream catalog updates to maintain SQL product cache.
-    - **Data Augmentation**: Relational data (Orders) enriched with Cached Product data (from local database) at runtime.
+    - **Order Snapshotting**: Relational data (Orders) contains inline snapshotted product, fabric, and customization choices in PostgreSQL at checkout.
     - Defensive payload validation and precise schema adherence using strict string matching (e.g., trimming, downcasing) and custom `AppError` logging.
 - **Architectural Patterns**:
     - **Resilient Fallback**: Orders default to 'Standard' options if selected modifiers are missing from the catalog configuration.

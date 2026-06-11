@@ -1,5 +1,5 @@
 import express from 'express';
-import cors from 'cors';
+// CORS is NOT configured here — this service is internal only (gateway handles CORS).
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 // @ts-ignore - Temporary until catalog-db is fully wired
@@ -21,10 +21,6 @@ dotenv.config();
 const app = express();
 
 app.use(helmet());
-app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-    credentials: true,
-}));
 app.use(express.json());
 
 // app.get('/health', (req, res) => {
@@ -94,12 +90,14 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 4001;
 
+let server: ReturnType<typeof app.listen>;
+
 async function startServer() {
     try {
         await connectMongoDB();
         console.log('✅ Catalog DB connected successfully');
 
-        app.listen(PORT, () => {
+        server = app.listen(PORT, () => {
             console.log(`🚀 Catalog Service running on port ${PORT}`);
         });
     } catch (error) {
@@ -107,5 +105,29 @@ async function startServer() {
         process.exit(1);
     }
 }
+
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+// Railway sends SIGTERM on deploy/restart.
+async function gracefulShutdown(signal: string) {
+    console.log(`[CatalogService] ${signal} received — shutting down gracefully...`);
+    if (server) {
+        server.close(() => {
+            console.log('[CatalogService] HTTP server closed.');
+        });
+    }
+    try {
+        const { disconnectMongoDB } = await import('@jhaz-imprints/catalog-db');
+        await disconnectMongoDB();
+    } catch { /* already disconnected */ }
+    try {
+        const { redisPublisher } = await import('./redis');
+        await redisPublisher.quit();
+    } catch { /* redis may not be connected */ }
+    console.log('[CatalogService] All connections closed. Exiting.');
+    process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 startServer();

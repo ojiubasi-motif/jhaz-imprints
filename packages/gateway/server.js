@@ -46,15 +46,28 @@ app.use(requestLogger);      // (1) attach timer + log on response
 // (2) CORS configuration — trim whitespace from origins list
 const corsOrigin = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : true;  // Allow any origin if not configured
+  : (() => {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'ALLOWED_ORIGINS must be set in production (e.g. https://jhazimprints.vercel.app)'
+        );
+      }
+      console.warn('[Gateway] ALLOWED_ORIGINS not set — allowing all origins (dev only)');
+      return true;
+    })();
 
 app.use(cors({
   origin: corsOrigin,
   credentials: true,
 }));
 app.use(express.json());     // (3) parse JSON bodies
+// ─── Trust Proxy ──────────────────────────────────────────────────────────────
+// Railway (and other PaaS) use a reverse proxy in front of the gateway.
+// This MUST be set before the rate limiter so express-rate-limit reads
+// the real client IP from X-Forwarded-For, not the proxy's IP.
+app.set('trust proxy', 1);
+
 app.use(limiter);            // (4) rate limiting
-app.set('trust proxy', 1);  //     trust first proxy (Render, nginx, etc.)
 
 // ─── Security Middleware ──────────────────────────────────────────────────────
 app.use(authenticateToken);  // (5) JWT validation — sets req.user, req.userId, req.userRole
@@ -73,8 +86,27 @@ app.use((err, req, res, _next) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Jhaz-imprints API Gateway running on port ${PORT}`);
   console.log(`   Catalog Service → ${process.env.CATALOG_SERVICE_URL}`);
   console.log(`   Core API        → ${process.env.CORE_API_URL}`);
 });
+
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+// Railway sends SIGTERM on deploy/restart. Stop accepting new connections,
+// drain in-flight requests, then exit cleanly.
+function gracefulShutdown(signal) {
+  console.log(`[Gateway] ${signal} received — shutting down gracefully...`);
+  server.close(() => {
+    console.log('[Gateway] All connections drained. Exiting.');
+    process.exit(0);
+  });
+  // Force exit after 10s if connections aren't drained
+  setTimeout(() => {
+    console.error('[Gateway] Forced shutdown after 10s timeout.');
+    process.exit(1);
+  }, 10_000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

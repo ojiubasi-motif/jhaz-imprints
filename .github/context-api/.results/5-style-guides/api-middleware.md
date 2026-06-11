@@ -77,5 +77,28 @@ export function validateBody(schema: ZodSchema) {
 }
 ```
 
+### verifyGatewayOrigin Middleware
+Checks that the request originated from the gateway (validating `x-internal-secret` only), bypassing healthcheck endpoints `/health` and `/api/health`. Used as a global application-level middleware to secure all internal API pathways.
+```typescript
+export function verifyGatewayOrigin(req: Request, res: Response, next: NextFunction) {
+  if (req.path === "/health" || req.path === "/api/health") {
+    return next();
+  }
+
+  const incomingSecret = req.headers["x-internal-secret"];
+
+  if (!INTERNAL_SECRET || incomingSecret !== INTERNAL_SECRET) {
+    return res.status(403).json({
+      msg: "Forbidden: Direct access to internal service is not permitted.",
+      data: null,
+      type: "GATEWAY_BYPASS_DETECTED",
+      code: 403,
+    });
+  }
+
+  next();
+}
+```
+
 ## Naming Conventions
 - Files: `camelCase.ts` (e.g., `authenticate.ts`, `validateBody.ts`, `authorize.ts`).

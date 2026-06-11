@@ -19,11 +19,25 @@ The `middleware` domain manages the flow and ordering of request intercepts befo
 //   5. authenticateToken → validates JWT (sets req.user/req.userId/req.userRole)
 //   6. authorise         → enforces RBAC based on req.userRole
 //   7. router            → routes requests to downstream endpoints
-app.use(requestLogger);
-app.use(cors({ origin: '*' }));
-app.use(express.json());
-app.use(limiter);
-app.use(authenticateToken);
-app.use(authorise);
-app.use(router);
+app.use(requestLogger);      // (1) attach timer + log on response
+
+// (2) CORS configuration — trim whitespace from origins list
+const corsOrigin = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : true;  // Allow any origin if not configured
+
+app.use(cors({
+  origin: corsOrigin,
+  credentials: true,
+}));
+app.use(express.json());     // (3) parse JSON bodies
+app.use(limiter);            // (4) rate limiting
+app.set('trust proxy', 1);  //     trust first proxy (Render, nginx, etc.)
+
+// ─── Security Middleware ──────────────────────────────────────────────────────
+app.use(authenticateToken);  // (5) JWT validation — sets req.user, req.userId, req.userRole
+app.use(authorise);          // (6) RBAC — checks role against permission matrix
+
+// ─── Routing ──────────────────────────────────────────────────────────────────
+app.use(router);             // (7) resolve SERVICE_MAP and proxy to downstream
 ```

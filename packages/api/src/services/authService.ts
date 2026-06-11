@@ -2,6 +2,16 @@ import { prisma } from "@jhaz-imprints/db";
 import { RegisterData, LoginData } from "@jhaz-imprints/shared";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
+
+/**
+ * Hashes a token with SHA-256 for secure storage.
+ * The raw token is returned to the client; only the hash is stored in the DB.
+ * On refresh, the incoming token is hashed and compared to the stored hash.
+ */
+function hashToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
 
 export class AuthService {
   /**
@@ -35,10 +45,10 @@ export class AuthService {
     const access_token = this.generateAccessToken(user);
     const refresh_token = this.generateRefreshToken(user);
 
-    // Save refresh token to DB
+    // Store hashed refresh token in DB (never store raw tokens)
     await prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken: refresh_token },
+      data: { refreshToken: hashToken(refresh_token) },
     });
 
     // Remove password and refreshToken from returned user object
@@ -73,7 +83,7 @@ export class AuthService {
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { refreshToken: refresh_token },
+      data: { refreshToken: hashToken(refresh_token) },
     });
 
     const { password: _, refreshToken: __, ...userData } = user as any;
@@ -99,7 +109,7 @@ export class AuthService {
         where: { id: decoded.id },
       });
 
-      if (!user || user.refreshToken !== token) {
+      if (!user || user.refreshToken !== hashToken(token)) {
         throw new Error("Invalid refresh token");
       }
 
@@ -108,7 +118,7 @@ export class AuthService {
 
       await prisma.user.update({
         where: { id: user.id },
-        data: { refreshToken: new_refresh_token },
+        data: { refreshToken: hashToken(new_refresh_token) },
       });
 
       const { password: _, refreshToken: __, ...userData } = user as any;
@@ -148,7 +158,7 @@ export class AuthService {
     return jwt.sign(
       { email: user.email, role: user.role, id: user.id },
       secret,
-      { expiresIn: "1d" }
+      { expiresIn: "15m" }
     );
   }
 
