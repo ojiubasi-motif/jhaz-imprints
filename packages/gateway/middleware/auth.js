@@ -44,14 +44,26 @@ const PUBLIC_ROUTES = [
  * @returns {boolean}
  */
 function isPublicRoute(req) {
-  // Exact-match check
-  const exactMatch = PUBLIC_ROUTES.some(
-    (route) => req.path === route.path && req.method === route.method,
-  );
+  // Normalize the request path to handle double slashes and trailing slashes
+  const cleanPath = req.path
+    .replace(/\/+/g, '/') // Collapse multiple slashes (e.g. /api//auth/register -> /api/auth/register)
+    .replace(/\/$/, '');  // Strip trailing slash if present (except for root '/')
+
+  const normalizedPath = cleanPath || '/';
+
+  // Exact-match check against normalized route paths
+  const exactMatch = PUBLIC_ROUTES.some((route) => {
+    const cleanRoutePath = route.path
+      .replace(/\/+/g, '/')
+      .replace(/\/$/, '');
+    const normalizedRoutePath = cleanRoutePath || '/';
+    return normalizedPath === normalizedRoutePath && req.method === route.method;
+  });
+
   if (exactMatch) return true;
 
   // Product detail pages are public: GET /api/v1/products/<anything>
-  if (req.method === 'GET' && /^\/api\/v1\/products\/[^/]+$/.test(req.path)) {
+  if (req.method === 'GET' && /^\/api\/v1\/products\/[^/]+\/?$/.test(normalizedPath)) {
     return true;
   }
 

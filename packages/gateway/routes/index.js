@@ -74,7 +74,9 @@ router.get('/health', (_req, res) => {
 // Handles ALL methods (GET, POST, PUT, PATCH, DELETE) under /api/*.
 // Express 5 requires the named wildcard syntax: *splat
 router.all('/api/*splat', async (req, res) => {
-  const resolved = resolveService(req.path);
+  // Collapse multiple slashes for robust service resolution
+  const normalizedPath = req.path.replace(/\/+/g, '/');
+  const resolved = resolveService(normalizedPath);
 
   if (!resolved || !resolved.serviceUrl) {
     return res.status(404).json({
