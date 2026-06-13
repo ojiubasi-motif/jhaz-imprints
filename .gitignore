@@ -5,6 +5,7 @@ apps/bolt/
 scratch/
 .pnp
 .pnp.js
+.github
 
 # Turbo
 .turbo/
