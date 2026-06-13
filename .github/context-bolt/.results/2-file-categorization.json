@@ -17,17 +17,18 @@
     "./src/pages/Order.tsx",
     "./src/pages/Cart.tsx",
     "./src/pages/Login.tsx",
-    "./src/pages/Register.tsx"
+    "./src/pages/Register.tsx",
+    "./src/pages/MyOrders.tsx"
   ],
   "page-components": [
     "./src/pages/Catalog.tsx",
     "./src/pages/Order.tsx",
     "./src/pages/Cart.tsx",
     "./src/pages/Login.tsx",
-    "./src/pages/Register.tsx"
+    "./src/pages/Register.tsx",
+    "./src/pages/MyOrders.tsx"
   ],
   "state-providers": [
-    "./src/context/CartContext.tsx",
     "./src/store/index.ts",
     "./src/store/slices/authSlice.ts",
     "./src/store/hooks.ts"

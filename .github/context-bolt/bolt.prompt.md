@@ -25,9 +25,8 @@ Use this file as the primary reference whenever you are:
 | Data (catalog)    | Supabase JS v2 (anon key, client-side)          |
 | Data (auth/API)   | REST API via `fetchApi()` in `src/lib/apiClient.ts` |
 | Auth state        | Redux Toolkit v2 (`@reduxjs/toolkit`) + React Redux |
-| Icons             | Lucide React                                    |
 | Build             | Vite v5 with `/api` dev proxy to `http://localhost:8080` |
-| State Management  | React built-ins & Global Cart Context (`CartContext.tsx`) with `localStorage` persistence; Redux Toolkit for authentication state only (`authSlice`) |
+| State Management  | React built-ins & localStorage with custom browser event synchronization; Redux Toolkit for authentication state only (`authSlice`) |
 
 **Domain:** African fashion e-commerce with made-to-order customisation, localized for the **Nigerian market** (prices in Naira ₦, shipping defaulted to Nigeria and Nigerian states).
 
@@ -74,15 +73,15 @@ See: [5-style-guides/page-components.md](./.results/5-style-guides/page-componen
 
 ---
 
-### `state-providers` — Global Context & Redux Store
-**What it is:** React Context provider modules and the Redux store that share state across independent pages and nav shells.
+### `state-providers` — Redux Store & State Synchronization
+**What it is:** The Redux store that shares auth state across pages, and localStorage sync mechanisms for cart data.
 
-**Examples:** `src/context/CartContext.tsx`, `src/store/index.ts`, `src/store/slices/authSlice.ts`
+**Examples:** `src/store/index.ts`, `src/store/slices/authSlice.ts`, `src/store/hooks.ts`
 
 **Key conventions:**
-- **Cart context** (`CartContext.tsx`): Export `<CartProvider>` and `useCart()`. Persist state in `localStorage` via React effects.
 - **Auth Redux** (`src/store/`): Configured in `index.ts`, typed hooks in `hooks.ts`, auth logic in `slices/authSlice.ts`. Always consume via `useAppDispatch()` and `useAppSelector()`.
-- Define and export interfaces representing state structures (e.g., `CartItem`, `AuthState`, `User`) at the top of the provider/slice file as the source of truth.
+- **Cart Synchronization**: Cart data is read and written directly to `localStorage` under `jhaz_cart`. Sync across pages and shells is done via custom window event `jhaz-cart-updated`.
+- Define and export interfaces representing state structures (e.g., `AuthState`, `User`) at the top of the Redux slice file as the source of truth.
 
 ---
 

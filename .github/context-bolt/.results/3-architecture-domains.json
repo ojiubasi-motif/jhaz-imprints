@@ -17,7 +17,7 @@ Client-side routing is managed entirely by **React Router DOM v7**. The router i
 - All current routes live in `App.tsx` — new routes should be added there
 - Pages live in `src/pages/`; they are imported into `App.tsx`
 - Hash-based section anchors (`/#customize`, `/#heritage`) are used for same-page navigation from other routes
-- Current routes: `/` (Home), `/catalog` (Catalog), `/order` (Order Wizard), `/cart` (Cart Page), `/login` (Login), `/register` (Register)
+- Current routes: `/` (Home), `/catalog` (Catalog), `/order` (Order Wizard), `/cart` (Cart Page), `/login` (Login), `/register` (Register), `/my-orders` (My Orders)
 - Search params are used for: `?category=...` (Catalog filtering), `?step=N` (Order wizard steps), `?product=...` (Product pre-selection), `?redirect=...` (post-login redirect for Login/Register pages)
 
 ---
@@ -125,20 +125,19 @@ The `Navbar` component is a fixed, transparent-to-opaque header that uses scroll
 
 ---
 
-## 7. State Management / Cart Context (`state-management`)
+## 7. State Management / Cart Synchronization (`state-management`)
 
 ### Description
-Shared application state (primarily custom outfits shopping cart data) is managed globally via React Context (`CartContext.tsx`) and persisted to `localStorage`.
+Shared application state (primarily custom outfits shopping cart data) is persisted directly in `localStorage` under the key `jhaz_cart`. To maintain vertical consistency across separate page components and layout shells, synchronization is handled via a custom browser window event (`jhaz-cart-updated`).
 
 ### REQUIRED Patterns
-- Custom outfits shopping cart array and helper state methods (`addToCart`, `removeFromCart`, `clearCart`) must be declared inside the React context `CartContext`
-- Context state must be initialized and automatically serialized/written to `localStorage` under key `jhaz_cart` inside a React `useEffect`
-- Components must consume the cart state using the custom hook `useCart()`
-- Navbar must render item count badge based on `cart.length` dynamically
+- Read and write cart data directly to `localStorage` (`jhaz_cart` key) inside pages (`Order.tsx`, `Cart.tsx`).
+- Dispatch a custom browser event `window.dispatchEvent(new Event('jhaz-cart-updated'))` whenever items are added, updated, or removed.
+- Components/shells needing to display the cart count (like `Navbar.tsx`'s cart badge) must subscribe to this event and the browser `storage` event to automatically sync their local count.
 
 ### CONSTRAINTS
-- Do not duplicate shopping cart state in page-level React states; always consume from the context hook
-- Cart must be cleared upon successful payment completion via `clearCart()`
+- The cart count in the header must be read via the custom hook `useCartCount()` inside `Navbar.tsx` which handles event subscriptions automatically.
+- Cart must be cleared in `localStorage` upon successful payment completion.
 
 ---
 
@@ -149,15 +148,15 @@ User authentication is managed via a JWT-based REST API (the gateway at `http://
 - **Access token** — stored in memory only via `src/lib/tokenStore.ts` (XSS-safe)
 - **Refresh token** — stored in an httpOnly cookie managed by the server (CSRF-safe)
 
-Authentication state (current user, loading, error) is held in **Redux Toolkit** (`src/store/slices/authSlice.ts`). The app silently restores sessions on page load via `AuthInitializer.tsx`.
+Authentication state (current user, loading, error, initialization status) is held in **Redux Toolkit** (`src/store/slices/authSlice.ts`). The app silently restores sessions on page load via `AuthInitializer.tsx` and blocks rendering with a premium loading screen until initialization is complete.
 
 ### REQUIRED Patterns
 - All API calls (authenticated or not) must go through `fetchApi()` from `src/lib/apiClient.ts` — never use `fetch()` directly for API calls
 - `fetchApi()` automatically attaches the Bearer token from `tokenStore`, refreshes it proactively 60 seconds before expiry, and deduplicates concurrent refresh calls
 - Auth state must be read via `useAppSelector((state) => state.auth)` using the typed hook from `src/store/hooks.ts`
 - Auth actions must be dispatched via `useAppDispatch()` from `src/store/hooks.ts`
-- `AuthInitializer` wraps all app content in `App.tsx`; it calls `dispatch(loadProfile())` on mount to restore sessions silently
-- Pages that require authentication should redirect to `/login?redirect=<current-path>` when `user` is null
+- `AuthInitializer` wraps all app content in `App.tsx`; it calls `dispatch(loadProfile())` on mount to restore sessions silently and blocks children rendering with a brand loading spinner while `initialized` is `false` to avoid redirect flashes on refresh
+- Pages that require authentication should redirect to `/login?redirect=<current-path>` only if `initialized` is true and `user` is null
 
 ### CONSTRAINTS
 - Access tokens must never be stored in `localStorage` or `sessionStorage` — use `tokenStore` (in-memory) only

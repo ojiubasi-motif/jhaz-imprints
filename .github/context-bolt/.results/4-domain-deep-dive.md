@@ -243,28 +243,26 @@ const navLinks = [
 
 ## Domain: `state-management`
 
-**Files examined:** `src/context/CartContext.tsx`, `src/App.tsx`, `src/pages/Order.tsx`, `src/components/Navbar.tsx`
+**Files examined:** `src/store/index.ts`, `src/App.tsx`, `src/pages/Order.tsx`, `src/pages/Cart.tsx`, `src/components/Navbar.tsx`
 
-### CartContext Hook & Provider Contract
+### Cart Synchronization Model
 ```typescript
-// src/context/CartContext.tsx
-export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    const saved = localStorage.getItem('jhaz_cart');
-    return saved ? JSON.parse(saved) : [];
-  });
-  useEffect(() => {
-    localStorage.setItem('jhaz_cart', JSON.stringify(cart));
-  }, [cart]);
-  
-  // exposed methods: addToCart, removeFromCart, updateCartItem, clearCart
-};
-export const useCart = () => useContext(CartContext);
+// Cart items are read directly from and serialized to localStorage
+const saved = localStorage.getItem('jhaz_cart');
+const cart = saved ? JSON.parse(saved) : [];
+
+// Pages dispatch a custom window event when cart changes
+window.dispatchEvent(new Event('jhaz-cart-updated'));
+
+// Navbar.tsx subscribes to storage and custom events to update the cart badge dynamically
+window.addEventListener('storage', readCount);
+window.addEventListener('jhaz-cart-updated', readCount);
 ```
 
-### Context Registration
-- `<CartProvider>` wraps the route containers inside `<App />` so both layout shells and router page targets have equal access to the state via the custom `useCart()` hook.
-- Persistent operations must be handled implicitly within context effects (e.g. JSON stringifying to `localStorage`).
+### State Coordination
+- Cart updates are decoupled from Context to allow performant direct reads/writes in multiple page components without unnecessary parent re-renders.
+- Multi-step wizards (like `Order.tsx`) synchronize steps with URL query parameters so navigation states are preserved.
+- Cart is automatically cleared in localStorage upon successful checkout completion.
 
 ---
 
@@ -358,10 +356,11 @@ export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector;
 ### Auth State Shape
 ```typescript
 interface AuthState {
-  user: User | null;      // null = unauthenticated
-  isLoading: boolean;     // true during any async thunk
-  error: string | null;   // API error message from rejected thunk
+  user: User | null;        // null = unauthenticated
+  isLoading: boolean;       // true during any async thunk
+  error: string | null;     // API error message from rejected thunk
   expiresAt: number | null; // access token expiry (ms epoch)
+  initialized: boolean;     // true once initial session restore completes
 }
 ```
 
@@ -399,6 +398,7 @@ export async function fetchApi(endpoint: string, options?: RequestInit): Promise
 ```tsx
 // src/components/AuthInitializer.tsx — wraps all app content in App.tsx
 // On mount: dispatch(loadProfile()) — silent restore via refresh cookie
+// If not initialized: blocks rendering and displays a premium brand spinner loading screen
 // Watches expiresAt changes: schedules proactive token refresh 60s before expiry
 // Listens for 'auth-expired' events: dispatch(clearAuth())
 export default function AuthInitializer({ children }: { children: React.ReactNode })
