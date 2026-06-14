@@ -919,6 +919,37 @@ export async function deletePendingOrder(userId: string, orderId: string) {
     throw new AppError("Only pending orders can be cancelled", 400);
   }
 
+  // Verify payment status with Paystack before cancelling
+  const payment = await prisma.payment.findUnique({
+    where: { orderId },
+  });
+
+  if (payment && payment.reference) {
+    try {
+      console.log(`[orderService] Verifying payment status on Paystack for reference: ${payment.reference} before cancellation`);
+      const verification = await verifyPayment(payment.reference);
+      
+      if (verification.status === "success") {
+        console.warn(`[orderService] Cancellation aborted: payment already completed for reference: ${payment.reference}`);
+        
+        // Auto-heal: Verify/confirm in the background so the database status updates
+        confirmPayment(payment.reference).catch((err) => {
+          console.error(`[orderService] Auto-confirm failed for reference ${payment.reference}:`, err);
+        });
+
+        throw new AppError(
+          "This order cannot be cancelled because your payment has already been successfully processed. The order status has been updated to CONFIRMED.",
+          400
+        );
+      }
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      console.log(`[orderService] Paystack verification error during cancellation check (safe to ignore if unpaid):`, error.message);
+    }
+  }
+
   await prisma.order.delete({
     where: { id: orderId },
   });
