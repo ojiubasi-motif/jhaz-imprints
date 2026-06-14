@@ -133,7 +133,8 @@ export async function verifyPaymentHandler(req: AuthenticatedRequest, res: Respo
     msg: "payment verified successfully",
     data: {
       orderId: result.order?.id,
-      status: result.order?.status || "CONFIRMED",
+      status: result.order?.status || "PENDING",
+      paymentStatus: result.status,
       alreadyProcessed: result.alreadyProcessed
     },
     type: "SUCCESS",
@@ -171,7 +172,8 @@ export async function paystackWebhookHandler(req: Request, res: Response) {
     msg: "payment confirmed",
     data: {
       orderId: result.order?.id,
-      status: result.order?.status || "CONFIRMED",
+      status: result.order?.status || "PENDING",
+      paymentStatus: result.status,
       alreadyProcessed: result.alreadyProcessed
     },
     type: "SUCCESS",

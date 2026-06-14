@@ -401,13 +401,57 @@ export async function confirmPayment(reference: string) {
 
   // Check if Paystack reports payment as successful
   if (paystackVerification.status !== "success") {
-    throw new AppError(
-      `Payment verification failed with status: ${paystackVerification.status}`,
-      400
-    );
+    if (paystackVerification.status === "failed") {
+      const updated = await prisma.$transaction(async (tx) => {
+        const lockedPayment = await tx.payment.findUnique({ where: { reference } });
+        if (lockedPayment?.status === "COMPLETED") {
+          return { order: null, payment: lockedPayment, alreadyProcessed: true };
+        }
+
+        const payment = await tx.payment.update({
+          where: { reference },
+          data: { status: "FAILED" },
+        });
+
+        const order = await tx.order.findUnique({
+          where: { id: payment.orderId },
+        });
+
+        // Insert failed payment history entry
+        const existingHistory = await tx.orderStatusHistory.findFirst({
+          where: { orderId: order!.id, status: "PENDING", note: { startsWith: "Payment failed" } },
+        });
+        if (!existingHistory) {
+          await tx.orderStatusHistory.create({
+            data: {
+              orderId: order!.id,
+              status: "PENDING",
+              note: `Payment failed: reference ${reference}`,
+            },
+          });
+        }
+
+        return { order, payment, alreadyProcessed: false };
+      });
+
+      return {
+        status: "FAILED",
+        order: updated.order,
+        payment: updated.payment,
+        alreadyProcessed: updated.alreadyProcessed,
+      };
+    }
+
+    // For any other status (e.g. "ongoing", "abandoned", "pending")
+    return {
+      status: "PENDING",
+      order,
+      payment,
+      alreadyProcessed: false,
+    };
   }
 
-  // Verify amount matches
+  // Verify amount matches (only for successful payments)
   if (paystackVerification.amount !== payment.amount) {
     throw new AppError(
       "Payment amount mismatch with Paystack verification",
@@ -491,7 +535,7 @@ export async function confirmPayment(reference: string) {
     }
   }
 
-  return { order: updated.order, payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
+  return { status: "COMPLETED", order: updated.order, payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
 }
 
 /**
