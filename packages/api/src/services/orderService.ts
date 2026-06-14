@@ -86,6 +86,30 @@ export interface CreateOrderInput {
 }
 
 /**
+ * Helper to parse stringified JSON from order.notes and attach delivery details and promo code as objects/fields.
+ */
+export function parseNotesMetadata(order: any): any {
+  if (!order) return order;
+
+  // Set default fields
+  order.delivery = null;
+  order.promoCode = null;
+
+  if (order.notes) {
+    try {
+      const parsed = JSON.parse(order.notes);
+      if (parsed && typeof parsed === "object") {
+        order.delivery = parsed.delivery || null;
+        order.promoCode = parsed.promoCode || null;
+      }
+    } catch (e) {
+      // Keep delivery and promoCode as null for legacy plaintext notes
+    }
+  }
+  return order;
+}
+
+/**
  * Create a new order.
  *
  * Optimised flow:
@@ -325,7 +349,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
   );
 
   return {
-    order: newOrder,
+    order: parseNotesMetadata(newOrder),
     payment,
     paymentUrl: paystackInit.authorizationUrl,
     accessCode: paystackInit.accessCode,
@@ -371,7 +395,7 @@ export async function confirmPayment(reference: string) {
     const order = await prisma.order.findUnique({
       where: { id: payment.orderId }
     });
-    return { alreadyProcessed: true, payment, order };
+    return { alreadyProcessed: true, payment, order: parseNotesMetadata(order) };
   }
 
 
@@ -436,7 +460,7 @@ export async function confirmPayment(reference: string) {
 
       return {
         status: "FAILED",
-        order: updated.order,
+        order: parseNotesMetadata(updated.order),
         payment: updated.payment,
         alreadyProcessed: updated.alreadyProcessed,
       };
@@ -445,7 +469,7 @@ export async function confirmPayment(reference: string) {
     // For any other status (e.g. "ongoing", "abandoned", "pending")
     return {
       status: "PENDING",
-      order,
+      order: parseNotesMetadata(order),
       payment,
       alreadyProcessed: false,
     };
@@ -537,7 +561,7 @@ export async function confirmPayment(reference: string) {
     });
   }
 
-  return { status: "COMPLETED", order: updated.order, payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
+  return { status: "COMPLETED", order: parseNotesMetadata(updated.order), payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
 }
 
 /**
@@ -577,7 +601,7 @@ export async function getOrderById(userId: string, orderId: string) {
     return await revalidateOrderPricing(order);
   }
 
-  return order;
+  return parseNotesMetadata(order);
 }
 
 /**
@@ -587,7 +611,7 @@ export async function getOrderById(userId: string, orderId: string) {
  */
 export async function revalidateOrderPricing(order: any) {
   if (order.status !== "PENDING") {
-    return order;
+    return parseNotesMetadata(order);
   }
 
   let deliveryFee = 0;
@@ -609,7 +633,7 @@ export async function revalidateOrderPricing(order: any) {
 
   const items = order.items as any[];
   if (!Array.isArray(items) || items.length === 0) {
-    return order;
+    return parseNotesMetadata(order);
   }
 
   let updated = false;
@@ -738,10 +762,10 @@ export async function revalidateOrderPricing(order: any) {
       return uOrder;
     });
 
-    return updatedOrder;
+    return parseNotesMetadata(updatedOrder);
   }
 
-  return order;
+  return parseNotesMetadata(order);
 }
 
 /**
@@ -762,7 +786,9 @@ export async function getUserOrders(userId: string, skip = 0, take = 20) {
 
   const total = await prisma.order.count({ where: { userId } });
 
-  return { orders, total, skip, take };
+  const parsedOrders = orders.map((o) => parseNotesMetadata(o));
+
+  return { orders: parsedOrders, total, skip, take };
 }
 
 /**
