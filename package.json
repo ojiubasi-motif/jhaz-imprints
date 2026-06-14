@@ -5,8 +5,7 @@
     "description": "Jhaz-imprints E-Commerce Platform — Nigerian traditional dress tailor",
     "packageManager": "pnpm@9.0.0",
     "engines": {
-        "node": ">=18.17.0",
-        "pnpm": ">=9.0.0"
+        "node": ">=18.17.0"
     },
     "scripts": {
         "dev": "turbo run dev --parallel",
