@@ -515,24 +515,26 @@ export async function confirmPayment(reference: string) {
       productName = `${productName} & ${orderItems.length - 1} other item(s)`;
     }
     
-    try {
-      await notificationQueue.add("order-confirmed", {
-        orderId: updated.order.id,
-        userId: updated.order.userId,
-        userEmail: updated.order.user.email,
-        userPhone: updated.order.user.phone,
-        userName: updated.order.user.firstName,
-        totalPrice: updated.order.totalAmount,
-        measurement: firstItem.measurement,
-        productName,
-        fabricOption: firstItem.fabricOptionName || "Standard",
-        colorOption: firstItem.colorName || "Default",
-        styleOption: firstItem.styleOptionName || "Standard",
-      });
+    // Fire-and-forget: do NOT await the queue add to prevent Redis connection delays/failures from blocking the API response
+    notificationQueue.add("order-confirmed", {
+      orderId: updated.order.id,
+      userId: updated.order.userId,
+      userEmail: updated.order.user.email,
+      userPhone: updated.order.user.phone,
+      userName: updated.order.user.firstName,
+      totalPrice: updated.order.totalAmount,
+      measurement: firstItem.measurement,
+      productName,
+      fabricOption: firstItem.fabricOptionName || "Standard",
+      colorOption: firstItem.colorName || "Default",
+      styleOption: firstItem.styleOptionName || "Standard",
+    })
+    .then(() => {
       console.log(`[orderService] ✓ Notification job added to queue`);
-    } catch (error) {
+    })
+    .catch((error) => {
       console.error(`[orderService] ✗ Failed to add notification job to queue:`, error);
-    }
+    });
   }
 
   return { status: "COMPLETED", order: updated.order, payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
