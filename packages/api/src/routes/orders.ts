@@ -129,6 +129,18 @@ router.get(
 );
 
 /**
+ * DELETE /api/orders/:orderId
+ * Cancel and delete a pending order.
+ */
+router.delete(
+  "/:orderId",
+  authenticate,
+  asyncHandler((req: AuthenticatedRequest, res) =>
+    orderHandlers.deleteOrderHandler(req, res)
+  )
+);
+
+/**
  * GET /api/orders
  * Admin view (optional, currently same as my-orders)
  */

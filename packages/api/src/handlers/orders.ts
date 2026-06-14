@@ -247,3 +247,23 @@ export async function updateMeasurementHandler(req: AuthenticatedRequest, res: R
     code: 600
   });
 }
+
+/**
+ * DELETE /api/orders/:orderId
+ * Cancel and delete a pending order.
+ */
+export async function deleteOrderHandler(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
+
+  const { orderId } = req.params;
+  await orderService.deletePendingOrder(req.user.id, orderId);
+
+  res.json({
+    msg: "order cancelled successfully",
+    data: null,
+    type: "SUCCESS",
+    code: 600
+  });
+}

@@ -898,3 +898,30 @@ export async function initializeOrderPayment(userId: string, orderId: string, em
     amount: orderResult.totalAmount,
   };
 }
+
+/**
+ * Cancel and delete a pending order.
+ */
+export async function deletePendingOrder(userId: string, orderId: string) {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+  });
+
+  if (!order) {
+    throw new AppError("Order not found", 404);
+  }
+
+  if (order.userId !== userId) {
+    throw new AppError("Forbidden", 403);
+  }
+
+  if (order.status !== "PENDING") {
+    throw new AppError("Only pending orders can be cancelled", 400);
+  }
+
+  await prisma.order.delete({
+    where: { id: orderId },
+  });
+
+  return { success: true };
+}
