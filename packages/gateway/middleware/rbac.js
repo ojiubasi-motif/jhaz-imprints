@@ -39,7 +39,7 @@ const PERMISSIONS = {
     // Customers can register, login, manage their own profile
     { prefix: '/api/auth',                 methods: ['GET', 'POST', 'PUT', 'PATCH'] },
     // Customers can place and view their own orders
-    { prefix: '/api/orders',               methods: ['GET', 'POST'] },
+    { prefix: '/api/orders',               methods: ['GET', 'POST', 'DELETE'] },
   ],
   ADMIN: [
     // Admins have full access to all routes

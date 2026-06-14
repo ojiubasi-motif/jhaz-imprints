@@ -530,7 +530,7 @@ export async function confirmPayment(reference: string) {
   // Enqueue notification job only if this call actually processed the payment
   if (updated.order && !updated.alreadyProcessed) {
     console.log(`[orderService] Enqueueing notification for order: ${updated.order.id}`);
-    
+
     // Augment with product data for notification
     const orderItems = (updated.order.items as any[]) || [];
     const firstItem = orderItems[0] || {};
@@ -538,7 +538,7 @@ export async function confirmPayment(reference: string) {
     if (orderItems.length > 1) {
       productName = `${productName} & ${orderItems.length - 1} other item(s)`;
     }
-    
+
     // Fire-and-forget: do NOT await the queue add to prevent Redis connection delays/failures from blocking the API response
     notificationQueue.add("order-confirmed", {
       orderId: updated.order.id,
@@ -553,12 +553,12 @@ export async function confirmPayment(reference: string) {
       colorOption: firstItem.colorName || "Default",
       styleOption: firstItem.styleOptionName || "Standard",
     })
-    .then(() => {
-      console.log(`[orderService] ✓ Notification job added to queue`);
-    })
-    .catch((error) => {
-      console.error(`[orderService] ✗ Failed to add notification job to queue:`, error);
-    });
+      .then(() => {
+        console.log(`[orderService] ✓ Notification job added to queue`);
+      })
+      .catch((error) => {
+        console.error(`[orderService] ✗ Failed to add notification job to queue:`, error);
+      });
   }
 
   return { status: "COMPLETED", order: parseNotesMetadata(updated.order), payment: updated.payment, alreadyProcessed: updated.alreadyProcessed };
@@ -686,11 +686,11 @@ export async function revalidateOrderPricing(order: any) {
         }
         const latestFabricPricePerUnit = prop?.priceModifier ?? 0;
         const currentYardsPerUnit = prop?.yardsPerUnit ?? 1.0;
-        
+
         const estimatedYards = calculateFabricYards(item.measurement);
         const unitsNeeded = Math.ceil(estimatedYards / currentYardsPerUnit);
         const totalFabricModifier = latestFabricPricePerUnit * unitsNeeded;
-        
+
         if (
           latestFabricPricePerUnit !== item.fabricPricePerUnit ||
           unitsNeeded !== item.fabricQty ||
@@ -737,7 +737,7 @@ export async function revalidateOrderPricing(order: any) {
   // If there are changes, update the PostgreSQL database
   if (updated || grandTotal !== order.totalAmount) {
     console.log(`[pricingSync] Updating order ${order.id} total amount: ${order.totalAmount} -> ${grandTotal}`);
-    
+
     // Update order and payment records atomically
     const updatedOrder = await prisma.$transaction(async (tx) => {
       const uOrder = await tx.order.update({
@@ -852,6 +852,36 @@ export async function updateMeasurement(userId: string, measurementId: string, i
 export async function initializeOrderPayment(userId: string, orderId: string, email: string) {
   const orderResult = await getOrderById(userId, orderId);
 
+  // Check if there is an existing payment reference and verify its status with Paystack first
+  const existingPayment = await prisma.payment.findUnique({
+    where: { orderId },
+  });
+
+  if (existingPayment && existingPayment.reference) {
+    try {
+      console.log(`[orderService] Checking Paystack status for reference: ${existingPayment.reference} in payment initialization`);
+      const verification = await verifyPayment(existingPayment.reference);
+      
+      if (verification.status === "success") {
+        console.log(`[orderService] Payment was successful for reference: ${existingPayment.reference}. Confirming order.`);
+        
+        // Confirm payment status
+        await confirmPayment(existingPayment.reference);
+        
+        return {
+          alreadyPaid: true,
+          orderId: orderResult.id,
+          amount: orderResult.totalAmount,
+          reference: existingPayment.reference,
+          paystackAccessCode: "",
+          paystackAuthorizationUrl: "",
+        };
+      }
+    } catch (error: any) {
+      console.log(`[orderService] Verification check during payment initialization failed/unpaid (ignoring):`, error.message);
+    }
+  }
+
   if (orderResult.status !== "PENDING") {
     throw new AppError(
       `Cannot create payment intent for order with status: ${orderResult.status}`,
@@ -928,10 +958,10 @@ export async function deletePendingOrder(userId: string, orderId: string) {
     try {
       console.log(`[orderService] Verifying payment status on Paystack for reference: ${payment.reference} before cancellation`);
       const verification = await verifyPayment(payment.reference);
-      
+
       if (verification.status === "success") {
         console.warn(`[orderService] Cancellation aborted: payment already completed for reference: ${payment.reference}`);
-        
+
         // Auto-heal: Verify/confirm in the background so the database status updates
         confirmPayment(payment.reference).catch((err) => {
           console.error(`[orderService] Auto-confirm failed for reference ${payment.reference}:`, err);
