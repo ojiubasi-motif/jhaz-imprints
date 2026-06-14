@@ -146,7 +146,13 @@ export async function verifyPaymentHandler(req: AuthenticatedRequest, res: Respo
  * Paystack webhook handler (idempotent via reference).
  */
 export async function paystackWebhookHandler(req: Request, res: Response) {
-  const { data } = req.body;
+  // If the body is a raw Buffer (because of the raw parser in app.ts),
+  // we must decode and parse it first to access its fields.
+  const isRaw = Buffer.isBuffer(req.body);
+  const rawBody = isRaw ? req.body.toString("utf-8") : req.body;
+  const bodyObj = isRaw ? JSON.parse(rawBody) : req.body;
+
+  const { data } = bodyObj;
 
   if (!data?.reference) {
     throw new AppError("Invalid webhook payload", 400);
@@ -154,7 +160,7 @@ export async function paystackWebhookHandler(req: Request, res: Response) {
 
   // Verify webhook signature (Crucial for production security)
   const signature = req.headers["x-paystack-signature"] as string;
-  if (!signature || !paystackService.verifyWebhookSignature(req.body, signature)) {
+  if (!signature || !paystackService.verifyWebhookSignature(rawBody, signature)) {
     throw new AppError("Invalid paystack signature", 401);
   }
 

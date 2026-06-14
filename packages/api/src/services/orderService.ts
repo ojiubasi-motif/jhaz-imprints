@@ -479,7 +479,7 @@ export async function confirmPayment(reference: string) {
         userPhone: updated.order.user.phone,
         userName: updated.order.user.firstName,
         totalPrice: updated.order.totalAmount,
-        measurement: updated.order.measurement,
+        measurement: firstItem.measurement,
         productName,
         fabricOption: firstItem.fabricOptionName || "Standard",
         colorOption: firstItem.colorName || "Default",
