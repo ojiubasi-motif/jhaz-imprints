@@ -11,18 +11,25 @@
 
 import { Queue, Worker } from "bullmq";
 import nodemailer from "nodemailer";
+import Redis from "ioredis";
 import { orderConfirmedEmail, statusUpdateEmail, adminOrderAlertEmail } from "../integrations/email/templates";
 
-// Connection options (prefers REDIS_URL connection string)
-const connectionOptions = process.env.REDIS_URL || {
-  host: process.env.REDIS_HOST || "localhost",
-  port: parseInt(process.env.REDIS_PORT || "6379"),
-  password: process.env.REDIS_PASSWORD,
-};
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+
+// Separate Redis connections required for Queue and Worker in BullMQ
+const queueConnection = new Redis(REDIS_URL, {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+});
+
+const workerConnection = new Redis(REDIS_URL, {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+});
 
 // Queue instance (shared across handlers)
 export const notificationQueue = new Queue("notifications", {
-  connection: connectionOptions as any,
+  connection: queueConnection,
   defaultJobOptions: {
     attempts: 3,
     backoff: {
@@ -168,7 +175,7 @@ export function startNotificationWorker() {
       }
     },
     {
-      connection: connectionOptions as any,
+      connection: workerConnection,
       concurrency: 5,
     }
   );
