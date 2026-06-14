@@ -202,6 +202,40 @@ const transporter = nodemailer.createTransport({
 
 async function sendEmail(to: string, subject: string, html: string) {
   console.log(`[Worker] Sending email to ${to} with subject: ${subject}`);
+  
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      console.log(`[Worker] Using Resend API for email delivery to ${to}`);
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: process.env.EMAIL_FROM || "onboarding@resend.dev",
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Resend API returned status ${response.status}: ${errText}`);
+      }
+
+      const result = await response.json() as any;
+      console.log(`[Worker] ✓ Email delivered to ${to} via Resend (Id: ${result.id})`);
+      return result;
+    } catch (error) {
+      console.error(`[Worker] ✗ Failed to send email to ${to} via Resend:`, error);
+      throw error;
+    }
+  }
+
+  // Fallback to Nodemailer SMTP
   try {
     const result = await transporter.sendMail({
       from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
@@ -209,10 +243,10 @@ async function sendEmail(to: string, subject: string, html: string) {
       subject,
       html,
     });
-    console.log(`[Worker] ✓ Email delivered to ${to} (MessageId: ${result.messageId})`);
+    console.log(`[Worker] ✓ Email delivered to ${to} via SMTP (MessageId: ${result.messageId})`);
     return result;
   } catch (error) {
-    console.error(`[Worker] ✗ Failed to send email to ${to}:`, error);
+    console.error(`[Worker] ✗ Failed to send email to ${to} via SMTP:`, error);
     throw error; // Re-throw to be caught by the job handler
   }
 }
