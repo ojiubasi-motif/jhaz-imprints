@@ -38,8 +38,8 @@ const PERMISSIONS = {
     { prefix: '/api/v1/fabrics',           methods: ['GET'] },  // fabric type filter list
     // Customers can register, login, manage their own profile
     { prefix: '/api/auth',                 methods: ['GET', 'POST', 'PUT', 'PATCH'] },
-    // Customers can place and view their own orders
-    { prefix: '/api/orders',               methods: ['GET', 'POST', 'DELETE'] },
+    // Customers can place and view their own orders and manage measurements
+    { prefix: '/api/orders',               methods: ['GET', 'POST', 'PUT', 'DELETE'] },
   ],
   ADMIN: [
     // Admins have full access to all routes
