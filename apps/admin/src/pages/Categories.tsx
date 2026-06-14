@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Tag, Search } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { fetchApi } from '../lib/apiClient';
 import type { Category } from '../types';
 import Modal from '../components/Modal';
 
@@ -24,9 +24,21 @@ export default function Categories() {
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('categories').select('*').order('name');
-    setCategories((data as Category[]) || []);
-    setLoading(false);
+    try {
+      const res = await fetchApi('/v1/categories');
+      const mapped = (res?.categories || []).map((c: any) => ({
+        id: c.slug, // Map slug as id for compatibility
+        name: c.name,
+        slug: c.slug,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+      setCategories(mapped);
+    } catch (err) {
+      console.error('Failed to load categories:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -53,23 +65,38 @@ export default function Categories() {
     if (!form.slug.trim()) { setError('Slug is required'); return; }
     setSaving(true);
     setError('');
-    if (modal === 'create') {
-      const { error: err } = await supabase.from('categories').insert({ name: form.name.trim(), slug: form.slug.trim() });
-      if (err) { setError(err.message); setSaving(false); return; }
-    } else if (editing) {
-      const { error: err } = await supabase.from('categories').update({ name: form.name.trim(), slug: form.slug.trim() }).eq('id', editing.id);
-      if (err) { setError(err.message); setSaving(false); return; }
+    try {
+      if (modal === 'create') {
+        await fetchApi('/v1/admin/categories', {
+          method: 'POST',
+          body: JSON.stringify({ name: form.name.trim(), slug: form.slug.trim() }),
+        });
+      } else if (editing) {
+        await fetchApi(`/v1/admin/categories/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ name: form.name.trim() }),
+        });
+      }
+      setModal(null);
+      load();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save category');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    setModal(null);
-    load();
   }
 
   async function handleDelete() {
     if (!deleteId) return;
-    await supabase.from('categories').delete().eq('id', deleteId);
-    setDeleteId(null);
-    load();
+    try {
+      await fetchApi(`/v1/admin/categories/${deleteId}`, {
+        method: 'DELETE',
+      });
+      setDeleteId(null);
+      load();
+    } catch (err) {
+      console.error('Failed to delete category:', err);
+    }
   }
 
   const filtered = categories.filter(c =>
@@ -123,7 +150,6 @@ export default function Categories() {
               <tr className="border-b border-[#E5DFD5] bg-[#FAF8F5]">
                 <th className="text-left text-xs font-semibold text-[#6B6460] px-5 py-3">Name</th>
                 <th className="text-left text-xs font-semibold text-[#6B6460] px-5 py-3">Slug</th>
-                <th className="text-left text-xs font-semibold text-[#6B6460] px-5 py-3">Created</th>
                 <th className="px-5 py-3" />
               </tr>
             </thead>
@@ -135,9 +161,6 @@ export default function Categories() {
                   </td>
                   <td className="px-5 py-4">
                     <code className="text-xs bg-[#F7F3EC] text-[#6B6460] px-2 py-1 rounded-md">{c.slug}</code>
-                  </td>
-                  <td className="px-5 py-4 text-xs text-[#9A8F87]">
-                    {new Date(c.created_at).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2 justify-end">
@@ -185,9 +208,10 @@ export default function Categories() {
               <input
                 type="text"
                 value={form.slug}
+                disabled={modal === 'edit'}
                 onChange={e => setForm(f => ({ ...f, slug: e.target.value }))}
                 placeholder="e.g. agbada"
-                className="w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm text-[#6B6460] bg-[#FAF8F5] focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]"
+                className={`w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm text-[#6B6460] bg-[#FAF8F5] focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A] ${modal === 'edit' ? 'opacity-60 cursor-not-allowed' : ''}`}
               />
             </div>
             {error && <p className="text-xs text-red-600">{error}</p>}

@@ -80,14 +80,14 @@ function isPublicRoute(req) {
  * @param {import('express').NextFunction} next
  */
 function authenticateToken(req, res, next) {
-  // Skip validation for public routes.
-  if (isPublicRoute(req)) {
-    return next();
-  }
-
   const authHeader = req.headers['authorization'];
   // Expected format: "Bearer <token>"
   const token = authHeader && authHeader.split(' ')[1];
+
+  // Skip validation for public routes if no token is provided.
+  if (isPublicRoute(req) && !token) {
+    return next();
+  }
 
   if (!token) {
     return res.status(401).json({

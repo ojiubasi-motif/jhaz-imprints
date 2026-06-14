@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Package, Search, ChevronRight, ChevronLeft, X, ToggleLeft, ToggleRight } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { fetchApi } from '../lib/apiClient';
 import type { Product, Category, Fabric, StyleOption } from '../types';
 import { GENDER_OPTIONS, OCCASION_OPTIONS } from '../types';
 import Modal from '../components/Modal';
@@ -65,6 +65,7 @@ export default function Products() {
   const [allFabrics, setAllFabrics] = useState<Fabric[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
@@ -74,25 +75,139 @@ export default function Products() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
 
-  async function load() {
-    setLoading(true);
-    const [{ data: prods }, { data: cats }, { data: fabs }] = await Promise.all([
-      supabase.from('products').select(`*, product_categories(category_id, categories(id, name, slug)), product_fabrics(fabric_id, fabrics(id, color_name, color_code, image_url))`).order('created_at', { ascending: false }),
-      supabase.from('categories').select('*').order('name'),
-      supabase.from('fabrics').select('*').order('color_name'),
-    ]);
-    const mapped = ((prods as any[]) || []).map(p => ({
-      ...p,
-      categories: (p.product_categories || []).map((pc: any) => pc.categories).filter(Boolean),
-      fabrics: (p.product_fabrics || []).map((pf: any) => pf.fabrics).filter(Boolean),
-    })) as Product[];
-    setProducts(mapped);
-    setAllCategories((cats as Category[]) || []);
-    setAllFabrics((fabs as Fabric[]) || []);
-    setLoading(false);
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  function mapProductToUiShape(p: any): Product {
+    const styleGroups: Record<string, string[]> = {};
+    (p.styleOptions || []).forEach((so: any) => {
+      const parts = so.name.split(' - ');
+      const groupName = parts[0] || 'Style';
+      const optValue = parts[1] || parts[0];
+      if (!styleGroups[groupName]) {
+        styleGroups[groupName] = [];
+      }
+      styleGroups[groupName].push(optValue);
+    });
+    
+    const style_options = Object.entries(styleGroups).map(([name, options]) => ({
+      name,
+      options
+    }));
+
+    return {
+      id: p._id || p.id,
+      name: p.name,
+      slug: p.slug,
+      description: p.description,
+      base_price: p.basePrice || p.price,
+      production_days: p.productionDays,
+      gender: p.gender,
+      occasion: p.occasion,
+      style_options,
+      default_style: p.defaultStyle || null,
+      seo_meta: p.seoMeta ? {
+        title: p.seoMeta.title || '',
+        description: p.seoMeta.description || '',
+        keywords: p.seoMeta.keywords || [],
+      } : null,
+      is_active: p.isActive !== false,
+      created_at: p.createdAt || p.created_at,
+      updated_at: p.updatedAt || p.updated_at,
+      categories: (p.categories || []).map((c: any) => ({
+        id: c.slug,
+        name: c.name,
+        slug: c.slug,
+      })),
+      fabrics: (p.fabrics || []).flatMap((f: any) => {
+        if (!f || typeof f === 'string') return [];
+        return (f.properties || []).map((prop: any, idx: number) => ({
+          id: `${f._id}::${idx}`,
+          fabricId: f._id,
+          color_name: f.properties.length > 1 ? `${f.name} — ${prop.colorName}` : prop.colorName,
+          color_code: prop.colorCode || null,
+          image_url: prop.imageUrl,
+        }));
+      }),
+    } as any;
   }
 
-  useEffect(() => { load(); }, []);
+  // Debounce search input changes
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [prodsRes, catsRes, fabsRes] = await Promise.all([
+        fetchApi(`/v1/products?isActive=all&page=${currentPage}&limit=10&search=${encodeURIComponent(debouncedSearch)}`),
+        fetchApi('/v1/categories'),
+        fetchApi('/v1/fabrics'),
+      ]);
+
+      const docs = prodsRes?.docs || [];
+      setTotalPages(prodsRes?.totalPages || 1);
+
+      const mappedProds = docs.map((p: any) => mapProductToUiShape(p));
+      setProducts(mappedProds);
+
+      const mappedCats = (catsRes?.categories || []).map((c: any) => ({
+        id: c.slug,
+        name: c.name,
+        slug: c.slug,
+      }));
+      setAllCategories(mappedCats);
+
+      const flatFabs: Fabric[] = [];
+      (fabsRes || []).forEach((f: any) => {
+        (f.properties || []).forEach((p: any, idx: number) => {
+          flatFabs.push({
+            id: `${f._id}::${idx}`,
+            color_name: f.properties.length > 1 ? `${f.name} — ${p.colorName}` : p.colorName,
+            color_code: p.colorCode || null,
+            image_url: p.imageUrl,
+            unit: p.unit,
+            yards_per_unit: p.yardsPerUnit,
+            price_modifier: p.priceModifier,
+            in_stock: p.inStock,
+            stock_level: p.stockLevel !== undefined ? p.stockLevel : null,
+            is_active: p.isActive,
+          } as any);
+        });
+      });
+      setAllFabrics(flatFabs);
+    } catch (err) {
+      console.error('Failed to load products page data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [currentPage, debouncedSearch]);
+
+  async function handleOpenView(p: Product) {
+    try {
+      const full = await fetchApi(`/v1/products/${p.id}`);
+      setViewProduct(mapProductToUiShape(full));
+    } catch (err) {
+      console.error('Failed to fetch full product details:', err);
+    }
+  }
+
+  async function handleOpenEdit(p: Product) {
+    try {
+      const full = await fetchApi(`/v1/products/${p.id}`);
+      openEdit(mapProductToUiShape(full));
+    } catch (err) {
+      console.error('Failed to fetch full product details:', err);
+    }
+  }
 
   function openCreate() {
     setEditing(null);
@@ -112,7 +227,7 @@ export default function Products() {
       production_days: String(p.production_days),
       gender: p.gender,
       occasion: p.occasion,
-      selectedCategories: (p.categories || []).map(c => c.id),
+      selectedCategories: (p.categories || []).map(c => c.slug),
       selectedFabrics: (p.fabrics || []).map(f => f.id),
       styleOptions: p.style_options || [],
       defaultStyle: p.default_style || '',
@@ -168,69 +283,104 @@ export default function Products() {
   async function handleSave() {
     setSaving(true);
     setError('');
+
+    const styleOptionsPayload = form.styleOptions.flatMap(so =>
+      so.options.map(opt => ({
+        name: `${so.name} - ${opt}`,
+        priceModifier: 0,
+        imgUrl: 'https://images.unsplash.com/photo-1590735213920-68192a487bc2?w=800&q=80',
+      }))
+    );
+
+    if (styleOptionsPayload.length === 0) {
+      styleOptionsPayload.push({
+        name: 'Standard - Default',
+        priceModifier: 0,
+        imgUrl: 'https://images.unsplash.com/photo-1590735213920-68192a487bc2?w=800&q=80',
+      });
+    }
+
+    const defaultStylePayload = form.defaultStyle
+      ? (form.defaultStyle.includes(' - ') ? form.defaultStyle : `${form.styleOptions[0]?.name || 'Standard'} - ${form.defaultStyle}`)
+      : styleOptionsPayload[0].name;
+
+    const categoriesPayload = form.selectedCategories.map(slug => {
+      const cat = allCategories.find(c => c.slug === slug);
+      return {
+        name: cat ? cat.name : slug,
+        slug: slug
+      };
+    });
+
+    const fabricsPayload = Array.from(new Set(
+      form.selectedFabrics.map(id => id.split('::')[0])
+    ));
+
     const payload = {
       name: form.name.trim(),
       slug: form.slug.trim() || slugify(form.name),
       description: form.description.trim(),
-      base_price: Number(form.base_price),
-      production_days: Number(form.production_days),
+      basePrice: Number(form.base_price),
+      productionDays: Number(form.production_days),
       gender: form.gender,
       occasion: form.occasion,
-      style_options: form.styleOptions,
-      default_style: form.defaultStyle || null,
-      seo_meta: {
+      styleOptions: styleOptionsPayload,
+      defaultStyle: defaultStylePayload,
+      seoMeta: {
         title: form.seoTitle || form.name,
         description: form.seoDescription,
         keywords: form.seoKeywords.split(',').map(k => k.trim()).filter(Boolean),
       },
-      is_active: form.is_active,
+      isActive: form.is_active,
+      categories: categoriesPayload,
+      fabrics: fabricsPayload,
     };
 
-    let productId = editing?.id;
-
-    if (!editing) {
-      const { data, error: err } = await supabase.from('products').insert(payload).select('id').single();
-      if (err) { setError(err.message); setSaving(false); return; }
-      productId = data.id;
-    } else {
-      const { error: err } = await supabase.from('products').update(payload).eq('id', editing.id);
-      if (err) { setError(err.message); setSaving(false); return; }
-      await supabase.from('product_categories').delete().eq('product_id', editing.id);
-      await supabase.from('product_fabrics').delete().eq('product_id', editing.id);
+    try {
+      if (!editing) {
+        await fetchApi('/v1/admin/products', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await fetchApi(`/v1/admin/products/${editing.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      }
+      setShowModal(false);
+      load();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save product');
+    } finally {
+      setSaving(false);
     }
-
-    if (form.selectedCategories.length > 0) {
-      await supabase.from('product_categories').insert(
-        form.selectedCategories.map(cid => ({ product_id: productId, category_id: cid }))
-      );
-    }
-    if (form.selectedFabrics.length > 0) {
-      await supabase.from('product_fabrics').insert(
-        form.selectedFabrics.map(fid => ({ product_id: productId, fabric_id: fid }))
-      );
-    }
-
-    setSaving(false);
-    setShowModal(false);
-    load();
   }
 
   async function handleDelete() {
     if (!deleteId) return;
-    await supabase.from('products').delete().eq('id', deleteId);
-    setDeleteId(null);
-    load();
+    try {
+      await fetchApi(`/v1/admin/products/${deleteId}`, {
+        method: 'DELETE',
+      });
+      setDeleteId(null);
+      load();
+    } catch (err) {
+      console.error('Failed to delete product:', err);
+    }
   }
 
   async function toggleActive(p: Product) {
-    await supabase.from('products').update({ is_active: !p.is_active }).eq('id', p.id);
-    load();
+    try {
+      await fetchApi(`/v1/admin/products/${p.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isActive: !p.is_active }),
+      });
+      load();
+    } catch (err) {
+      console.error('Failed to toggle product status:', err);
+    }
   }
-
-  const filtered = products.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    p.gender.toLowerCase().includes(search.toLowerCase())
-  );
 
   const toggleCat = (id: string) => setField('selectedCategories', form.selectedCategories.includes(id) ? form.selectedCategories.filter(c => c !== id) : [...form.selectedCategories, id]);
   const toggleFab = (id: string) => setField('selectedFabrics', form.selectedFabrics.includes(id) ? form.selectedFabrics.filter(f => f !== id) : [...form.selectedFabrics, id]);
@@ -240,7 +390,7 @@ export default function Products() {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
         <div>
           <h2 className="text-2xl font-bold text-[#1C1916]" style={{ fontFamily: "'Georgia', serif" }}>Products</h2>
-          <p className="text-sm text-[#6B6460] mt-0.5">{products.length} total · {products.filter(p => p.is_active).length} active</p>
+          <p className="text-sm text-[#6B6460] mt-0.5">{products.length} listed on page</p>
         </div>
         <button onClick={openCreate} className="flex items-center gap-2 bg-[#C8521A] text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-[#b04817] transition-colors self-start sm:self-auto">
           <Plus size={16} />
@@ -250,13 +400,13 @@ export default function Products() {
 
       <div className="relative">
         <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#9A8F87]" />
-        <input type="text" placeholder="Search products…" value={search} onChange={e => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E5DFD5] rounded-xl text-sm text-[#1C1916] placeholder-[#9A8F87] focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+        <input type="text" placeholder="Search products…" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }} className="w-full pl-10 pr-4 py-2.5 bg-white border border-[#E5DFD5] rounded-xl text-sm text-[#1C1916] placeholder-[#9A8F87] focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
       </div>
 
       <div className="bg-white rounded-2xl border border-[#E5DFD5] overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-sm text-[#9A8F87]">Loading…</div>
-        ) : filtered.length === 0 ? (
+        ) : products.length === 0 ? (
           <div className="p-10 text-center">
             <Package size={32} className="text-[#E5DFD5] mx-auto mb-3" />
             <p className="text-sm text-[#9A8F87]">No products yet. Create your first product.</p>
@@ -276,10 +426,10 @@ export default function Products() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => (
+                {products.map(p => (
                   <tr key={p.id} className="border-b border-[#F7F3EC] last:border-0 hover:bg-[#FAF8F5] transition-colors">
                     <td className="px-5 py-4">
-                      <button onClick={() => setViewProduct(p)} className="text-left">
+                      <button onClick={() => handleOpenView(p)} className="text-left">
                         <p className="text-sm font-medium text-[#1C1916] hover:text-[#C8521A] transition-colors">{p.name}</p>
                         <p className="text-xs text-[#9A8F87] mt-0.5">{(p.categories || []).map(c => c.name).join(', ') || 'No categories'}</p>
                       </button>
@@ -295,7 +445,7 @@ export default function Products() {
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2 justify-end">
-                        <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-[#6B6460] hover:bg-[#F7F3EC] hover:text-[#C8521A] transition-colors"><Pencil size={15} /></button>
+                        <button onClick={() => handleOpenEdit(p)} className="p-1.5 rounded-lg text-[#6B6460] hover:bg-[#F7F3EC] hover:text-[#C8521A] transition-colors"><Pencil size={15} /></button>
                         <button onClick={() => setDeleteId(p.id)} className="p-1.5 rounded-lg text-[#6B6460] hover:bg-red-50 hover:text-red-600 transition-colors"><Trash2 size={15} /></button>
                       </div>
                     </td>
@@ -305,6 +455,27 @@ export default function Products() {
             </table>
           </div>
         )}
+        
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between px-6 py-4 bg-white border-t border-[#E5DFD5]">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="flex items-center gap-1 text-xs font-semibold text-[#6B6460] hover:text-[#C8521A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronLeft size={16} /> Prev
+          </button>
+          <span className="text-xs text-[#6B6460]">
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className="flex items-center gap-1 text-xs font-semibold text-[#6B6460] hover:text-[#C8521A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Next <ChevronRight size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Product form modal */}
@@ -381,9 +552,9 @@ export default function Products() {
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {allCategories.map(c => {
-                      const sel = form.selectedCategories.includes(c.id);
+                      const sel = form.selectedCategories.includes(c.slug);
                       return (
-                        <button key={c.id} onClick={() => toggleCat(c.id)} className={`py-2 px-3 rounded-xl text-sm border transition-all text-left ${sel ? 'bg-[#1C1916] text-white border-[#1C1916]' : 'border-[#E5DFD5] text-[#6B6460] hover:border-[#1C1916]'}`}>
+                        <button key={c.id} onClick={() => toggleCat(c.slug)} className={`py-2 px-3 rounded-xl text-sm border transition-all text-left ${sel ? 'bg-[#1C1916] text-white border-[#1C1916]' : 'border-[#E5DFD5] text-[#6B6460] hover:border-[#1C1916]'}`}>
                           {c.name}
                         </button>
                       );

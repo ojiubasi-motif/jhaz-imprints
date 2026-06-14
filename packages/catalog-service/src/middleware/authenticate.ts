@@ -65,10 +65,7 @@ export function authenticate(req: AuthenticatedRequest, res: Response, next: Nex
   next();
 }
 
-/**
- * Verify request originated from the gateway (checks x-internal-secret only).
- */
-export function verifyGatewayOrigin(req: Request, res: Response, next: NextFunction) {
+export function verifyGatewayOrigin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   // Bypass check for health check endpoints (used by docker internally)
   if (req.path === "/health" || req.path === "/api/health") {
     return next();
@@ -83,6 +80,19 @@ export function verifyGatewayOrigin(req: Request, res: Response, next: NextFunct
       type: "GATEWAY_BYPASS_DETECTED",
       code: 403,
     });
+  }
+
+  // Populate req.user context if pre-validated headers are present from gateway
+  const userId    = req.headers["x-user-id"]    as string | undefined;
+  const userRole  = req.headers["x-user-role"]  as string | undefined;
+  const userEmail = req.headers["x-user-email"] as string | undefined;
+
+  if (userId && userRole) {
+    req.user = {
+      id:    userId,
+      email: userEmail ?? "",
+      role:  userRole as "CUSTOMER" | "ADMIN" | "TAILOR",
+    };
   }
 
   next();

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Package, Scissors, Tag, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { fetchApi } from '../lib/apiClient';
 import type { Product, Fabric } from '../types';
 
 interface Stats {
@@ -93,39 +93,70 @@ export default function Dashboard() {
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
-      const [
-        { data: products },
-        { data: fabrics },
-        { count: catCount },
-      ] = await Promise.all([
-        supabase.from('products').select('*').order('created_at', { ascending: false }),
-        supabase.from('fabrics').select('*'),
-        supabase.from('categories').select('*', { count: 'exact', head: true }),
-      ]);
+      try {
+        const [productsRes, fabricsRes, categoriesRes] = await Promise.all([
+          fetchApi('/v1/products?limit=100&isActive=all'),
+          fetchApi('/v1/fabrics'),
+          fetchApi('/v1/categories'),
+        ]);
 
-      const prods = (products as Product[]) || [];
-      const fabs = (fabrics as Fabric[]) || [];
+        const prods = productsRes?.docs || [];
+        const fabs: Fabric[] = [];
+        (fabricsRes || []).forEach((f: any) => {
+          (f.properties || []).forEach((p: any) => {
+            fabs.push({
+              id: f._id,
+              color_name: p.colorName,
+              color_code: p.colorCode || null,
+              unit: p.unit,
+              yards_per_unit: p.yardsPerUnit,
+              price_modifier: p.priceModifier,
+              in_stock: p.inStock,
+              stock_level: p.stockLevel !== undefined ? p.stockLevel : null,
+              is_active: p.isActive,
+            } as any);
+          });
+        });
 
-      const gMap: Record<string, number> = {};
-      const oMap: Record<string, number> = {};
-      prods.forEach(p => {
-        gMap[p.gender] = (gMap[p.gender] || 0) + 1;
-        oMap[p.occasion] = (oMap[p.occasion] || 0) + 1;
-      });
+        const catCount = (categoriesRes?.categories || []).length;
 
-      setStats({
-        totalProducts: prods.length,
-        activeProducts: prods.filter(p => p.is_active).length,
-        totalFabrics: fabs.length,
-        activeFabrics: fabs.filter(f => f.is_active).length,
-        totalCategories: catCount || 0,
-        lowStockFabrics: fabs.filter(f => f.stock_level !== null && f.stock_level < 10).length,
-      });
-      setGenderData(Object.entries(gMap).map(([gender, count]) => ({ gender, count })));
-      setOccasionData(Object.entries(oMap).map(([occasion, count]) => ({ occasion, count })));
-      setRecentProducts(prods.slice(0, 5));
-      setLowStockList(fabs.filter(f => f.stock_level !== null && f.stock_level < 10).slice(0, 4));
-      setLoading(false);
+        const gMap: Record<string, number> = {};
+        const oMap: Record<string, number> = {};
+        prods.forEach((p: any) => {
+          const gender = p.gender || 'unisex';
+          const occasion = p.occasion || 'casual';
+          gMap[gender] = (gMap[gender] || 0) + 1;
+          oMap[occasion] = (oMap[occasion] || 0) + 1;
+        });
+
+        setStats({
+          totalProducts: prods.length,
+          activeProducts: prods.filter((p: any) => p.isActive).length,
+          totalFabrics: fabs.length,
+          activeFabrics: fabs.filter(f => f.is_active).length,
+          totalCategories: catCount,
+          lowStockFabrics: fabs.filter(f => f.stock_level !== null && f.stock_level < 10).length,
+        });
+        setGenderData(Object.entries(gMap).map(([gender, count]) => ({ gender, count })));
+        setOccasionData(Object.entries(oMap).map(([occasion, count]) => ({ occasion, count })));
+        
+        // Map recent products to match UI
+        const mappedRecent = prods.slice(0, 5).map((p: any) => ({
+          id: p._id || p.id,
+          name: p.name,
+          gender: p.gender,
+          occasion: p.occasion,
+          base_price: p.basePrice || p.price,
+          is_active: p.isActive !== false,
+        }));
+        setRecentProducts(mappedRecent);
+        
+        setLowStockList(fabs.filter(f => f.stock_level !== null && f.stock_level < 10).slice(0, 4));
+      } catch (err) {
+        console.error('Failed to load dashboard statistics:', err);
+      } finally {
+        setLoading(false);
+      }
     }
     fetchAll();
   }, []);

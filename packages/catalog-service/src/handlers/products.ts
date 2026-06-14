@@ -3,8 +3,10 @@
  * Thin layer — all logic lives in productService.
  */
 
-import type { Request, Response } from "express";
+import type { Response } from "express";
+import type { AuthenticatedRequest } from "../middleware/authenticate";
 import * as productService from "../services/productService";
+import { AppError } from "../errors/AppError";
 
 /**
  * GET /api/products
@@ -18,8 +20,18 @@ import * as productService from "../services/productService";
  *   page      — page number (default: 1)
  *   limit     — items per page (default: 12, max: 50)
  */
-export async function listProductsHandler(req: Request, res: Response) {
-  const { category, gender, occasion, search, page, limit } = req.query;
+export async function listProductsHandler(req: AuthenticatedRequest, res: Response) {
+  const { category, gender, occasion, search, page, limit, isActive } = req.query;
+
+  // Restrict access to draft/inactive products to admin/tailor only
+  let targetIsActive = isActive as string | undefined;
+  
+  if (targetIsActive === "all" || targetIsActive === "false") {
+    const userRole = req.user?.role;
+    if (userRole !== "ADMIN" && userRole !== "TAILOR") {
+      targetIsActive = "true";
+    }
+  }
 
   const result = await productService.listProducts({
     category: category as string | undefined,
@@ -28,6 +40,7 @@ export async function listProductsHandler(req: Request, res: Response) {
     search: search as string | undefined,
     page: page ? Math.max(1, parseInt(page as string, 10)) : 1,
     limit: limit ? parseInt(limit as string, 10) : 12,
+    isActive: targetIsActive,
   });
 
   res.json({
@@ -47,9 +60,18 @@ export async function listProductsHandler(req: Request, res: Response) {
  *   /api/products/507f1f77bcf86cd799439011
  *   /api/products/traditional-wedding-aso-oke
  */
-export async function getProductHandler(req: Request, res: Response) {
+export async function getProductHandler(req: AuthenticatedRequest, res: Response) {
   const { idOrSlug } = req.params;
   const product = await productService.getProductByIdOrSlug(idOrSlug);
+
+  // If the product is not active, only admin/tailor can view it
+  if (product && product.isActive === false) {
+    const userRole = req.user?.role;
+    if (userRole !== "ADMIN" && userRole !== "TAILOR") {
+      throw new AppError("Product not found", 404, "PRODUCT_NOT_FOUND");
+    }
+  }
+
   res.json({
     msg: "product details",
     data: product,

@@ -3,7 +3,7 @@
  * All functions return plain JS objects (lean: true) for serialization safety.
  */
 
-import type { PaginateModel } from "mongoose-paginate-v2";
+import type { PaginateModel } from "mongoose";
 import { Product } from "@jhaz-imprints/catalog-db";
 import type { IProduct } from "@jhaz-imprints/catalog-db";
 import { getCategories } from "./categoryService";
@@ -16,6 +16,7 @@ export interface ListProductsQuery {
   search?: string;
   page?: number;
   limit?: number;
+  isActive?: boolean | string;
 }
 
 export function addImagesField(product: any): any {
@@ -50,10 +51,17 @@ export function addImagesField(product: any): any {
  *   GET /api/products?category=agbada&gender=men&search=elegant&page=1&limit=12
  */
 export async function listProducts(query: ListProductsQuery) {
-  const { category, gender, occasion, search, page = 1, limit = 12 } = query;
+  const { category, gender, occasion, search, page = 1, limit = 12, isActive } = query;
 
-  // Always filter to active products only for the public API
-  const filter: Record<string, unknown> = { isActive: true };
+  const filter: Record<string, unknown> = {};
+
+  if (isActive === "all") {
+    // Include both active and inactive
+  } else if (isActive === false || isActive === "false") {
+    filter.isActive = false;
+  } else {
+    filter.isActive = true;
+  }
 
   if (category) {
     // Validate the slug exists in categories.json

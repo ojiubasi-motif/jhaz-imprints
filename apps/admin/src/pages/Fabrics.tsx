@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Scissors, Search, ToggleLeft, ToggleRight } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from 'react';
+import { Plus, Pencil, Trash2, Scissors, Search, ToggleLeft, ToggleRight, Upload, X } from 'lucide-react';
+import { fetchApi } from '../lib/apiClient';
 import type { Fabric } from '../types';
 import { UNIT_OPTIONS } from '../types';
 import Modal from '../components/Modal';
@@ -19,28 +19,95 @@ const emptyForm: FabricForm = {
   is_active: true,
 };
 
+interface FabricPropertyInput {
+  colorName: string;
+  colorCode: string;
+  imageUrl: string;
+  unit: 'yard' | 'trouser-length' | 'ft' | 'roll' | 'pack';
+  yardsPerUnit: number;
+  priceModifier: number;
+  inStock: boolean;
+  stockLevel: number | null;
+  isActive: boolean;
+  uploading?: boolean;
+}
+
+interface FabricCreateForm {
+  name: string;
+  description: string;
+  properties: FabricPropertyInput[];
+}
+
+const defaultProperty = (): FabricPropertyInput => ({
+  colorName: '',
+  colorCode: '',
+  imageUrl: '',
+  unit: 'yard',
+  yardsPerUnit: 1,
+  priceModifier: 0,
+  inStock: true,
+  stockLevel: null,
+  isActive: true,
+});
+
+const defaultCreateForm = (): FabricCreateForm => ({
+  name: '',
+  description: '',
+  properties: [defaultProperty()],
+});
+
 export default function Fabrics() {
   const [fabrics, setFabrics] = useState<Fabric[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<'create' | 'edit' | null>(null);
   const [editing, setEditing] = useState<Fabric | null>(null);
+  
+  // Create mode uses nested properties array structure
+  const [createForm, setCreateForm] = useState<FabricCreateForm>(defaultCreateForm());
+  // Edit mode targets individual flat variant fields mapped to parent arrays
   const [form, setForm] = useState<FabricForm>(emptyForm);
+  
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   async function load() {
     setLoading(true);
-    const { data } = await supabase.from('fabrics').select('*').order('color_name');
-    setFabrics((data as Fabric[]) || []);
-    setLoading(false);
+    try {
+      const res = await fetchApi('/v1/fabrics');
+      const flat: Fabric[] = [];
+      (res || []).forEach((f: any) => {
+        (f.properties || []).forEach((p: any, idx: number) => {
+          flat.push({
+            id: `${f._id}::${idx}`,
+            color_name: f.properties.length > 1 ? `${f.name} — ${p.colorName}` : p.colorName,
+            color_code: p.colorCode || null,
+            image_url: p.imageUrl,
+            unit: p.unit,
+            yards_per_unit: p.yardsPerUnit,
+            price_modifier: p.priceModifier,
+            in_stock: p.inStock,
+            stock_level: p.stockLevel !== undefined ? p.stockLevel : null,
+            is_active: p.isActive,
+            created_at: f.createdAt || new Date().toISOString(),
+            updated_at: f.updatedAt || new Date().toISOString(),
+          } as any);
+        });
+      });
+      setFabrics(flat);
+    } catch (err) {
+      console.error('Failed to load fabrics:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
 
   function openCreate() {
-    setForm(emptyForm);
+    setCreateForm(defaultCreateForm());
     setEditing(null);
     setError('');
     setModal('create');
@@ -67,48 +134,237 @@ export default function Fabrics() {
     setForm(f => ({ ...f, [key]: val }));
   }
 
-  async function handleSave() {
-    if (!form.color_name.trim()) { setError('Color name is required'); return; }
-    if (!form.image_url.trim()) { setError('Image URL is required'); return; }
-    if (form.color_code && !/^#[0-9A-Fa-f]{6}$/.test(form.color_code)) {
-      setError('Color code must be a valid hex e.g. #4169E1');
-      return;
-    }
-    setSaving(true);
+  function updateCreateField<K extends keyof FabricCreateForm>(key: K, val: FabricCreateForm[K]) {
+    setCreateForm(prev => ({ ...prev, [key]: val }));
+  }
+
+  function updatePropertyField<K extends keyof FabricPropertyInput>(idx: number, key: K, val: FabricPropertyInput[K]) {
+    setCreateForm(prev => {
+      const copy = [...prev.properties];
+      copy[idx] = { ...copy[idx], [key]: val };
+      return { ...prev, properties: copy };
+    });
+  }
+
+  function addProperty() {
+    setCreateForm(prev => ({
+      ...prev,
+      properties: [...prev.properties, defaultProperty()],
+    }));
+  }
+
+  function removeProperty(idx: number) {
+    setCreateForm(prev => {
+      if (prev.properties.length <= 1) return prev;
+      const copy = prev.properties.filter((_, i) => i !== idx);
+      return { ...prev, properties: copy };
+    });
+  }
+
+  // File upload for editing single variant
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
     setError('');
-    const payload = {
-      color_name: form.color_name.trim(),
-      color_code: form.color_code || null,
-      image_url: form.image_url.trim(),
-      unit: form.unit,
-      yards_per_unit: Number(form.yards_per_unit),
-      price_modifier: Number(form.price_modifier),
-      in_stock: form.in_stock,
-      stock_level: form.stock_level !== null ? Number(form.stock_level) : null,
-      is_active: form.is_active,
-    };
-    if (modal === 'create') {
-      const { error: err } = await supabase.from('fabrics').insert(payload);
-      if (err) { setError(err.message); setSaving(false); return; }
-    } else if (editing) {
-      const { error: err } = await supabase.from('fabrics').update(payload).eq('id', editing.id);
-      if (err) { setError(err.message); setSaving(false); return; }
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetchApi('/v1/admin/uploads', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res?.url) {
+        setField('image_url', res.url);
+      } else {
+        throw new Error('Upload succeeded but no image URL was returned.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload image.');
+    } finally {
+      setUploading(false);
     }
-    setSaving(false);
-    setModal(null);
-    load();
+  }
+
+  // File upload for creating nested variant
+  async function handleCreatePropertyFileUpload(idx: number, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCreateForm(prev => {
+      const copy = [...prev.properties];
+      copy[idx] = { ...copy[idx], uploading: true };
+      return { ...prev, properties: copy };
+    });
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetchApi('/v1/admin/uploads', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res?.url) {
+        setCreateForm(prev => {
+          const copy = [...prev.properties];
+          copy[idx] = { ...copy[idx], imageUrl: res.url, uploading: false };
+          return { ...prev, properties: copy };
+        });
+      } else {
+        throw new Error('Upload succeeded but no image URL was returned.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload image.');
+      setCreateForm(prev => {
+        const copy = [...prev.properties];
+        copy[idx] = { ...copy[idx], uploading: false };
+        return { ...prev, properties: copy };
+      });
+    }
+  }
+
+  async function handleSave() {
+    setError('');
+
+    try {
+      if (modal === 'create') {
+        if (!createForm.name.trim()) { setError('Fabric name is required'); return; }
+        if (createForm.properties.length === 0) { setError('At least one property/variant is required'); return; }
+
+        for (let i = 0; i < createForm.properties.length; i++) {
+          const p = createForm.properties[i];
+          if (!p.colorName.trim()) { setError(`Variant #${i + 1}: Color name is required`); return; }
+          if (!p.imageUrl.trim()) { setError(`Variant #${i + 1}: Image file must be uploaded first`); return; }
+          if (p.colorCode && !/^#[0-9A-Fa-f]{6}$/.test(p.colorCode)) {
+            setError(`Variant #${i + 1}: Color code must be a valid hex e.g. #4169E1`);
+            return;
+          }
+        }
+
+        setSaving(true);
+        const payload = {
+          name: createForm.name.trim(),
+          description: createForm.description.trim() || undefined,
+          properties: createForm.properties.map(p => ({
+            colorName: p.colorName.trim(),
+            colorCode: p.colorCode || undefined,
+            imageUrl: p.imageUrl.trim(),
+            unit: p.unit,
+            yardsPerUnit: Number(p.yardsPerUnit),
+            priceModifier: Number(p.priceModifier),
+            inStock: p.inStock,
+            stockLevel: p.stockLevel !== null ? Number(p.stockLevel) : undefined,
+            isActive: p.isActive,
+          })),
+        };
+
+        await fetchApi('/v1/admin/fabrics', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      } else if (editing) {
+        if (!form.color_name.trim()) { setError('Color name is required'); return; }
+        if (!form.image_url.trim()) { setError('Image file must be uploaded first'); return; }
+        if (form.color_code && !/^#[0-9A-Fa-f]{6}$/.test(form.color_code)) {
+          setError('Color code must be a valid hex e.g. #4169E1');
+          return;
+        }
+
+        setSaving(true);
+        const [fabricId, propIndexStr] = editing.id.split('::');
+        const propIdx = parseInt(propIndexStr, 10);
+
+        const parentDoc = await fetchApi(`/v1/fabrics/${fabricId}`);
+        const updatedProperties = [...(parentDoc.properties || [])];
+
+        const newProp = {
+          colorName: form.color_name.includes('—') ? form.color_name.split('—')[1].trim() : form.color_name.trim(),
+          colorCode: form.color_code || undefined,
+          imageUrl: form.image_url.trim(),
+          unit: form.unit,
+          yardsPerUnit: Number(form.yards_per_unit),
+          priceModifier: Number(form.price_modifier),
+          inStock: form.in_stock,
+          stockLevel: form.stock_level !== null ? Number(form.stock_level) : undefined,
+          isActive: form.is_active,
+        };
+
+        updatedProperties[propIdx] = newProp;
+
+        const payload = {
+          name: form.color_name.includes('—') ? form.color_name.split('—')[0].trim() : parentDoc.name,
+          properties: updatedProperties,
+        };
+
+        await fetchApi(`/v1/admin/fabrics/${fabricId}`, {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
+      }
+      setModal(null);
+      load();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save fabric');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleDelete() {
     if (!deleteId) return;
-    await supabase.from('fabrics').delete().eq('id', deleteId);
-    setDeleteId(null);
-    load();
+    try {
+      const [fabricId, propIndexStr] = deleteId.split('::');
+      const propIdx = parseInt(propIndexStr, 10);
+
+      const parentDoc = await fetchApi(`/v1/fabrics/${fabricId}`);
+      const updatedProperties = (parentDoc.properties || []).filter((_: any, idx: number) => idx !== propIdx);
+
+      if (updatedProperties.length === 0) {
+        await fetchApi(`/v1/admin/fabrics/${fabricId}`, {
+          method: 'DELETE',
+        });
+      } else {
+        await fetchApi(`/v1/admin/fabrics/${fabricId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ properties: updatedProperties }),
+        });
+      }
+
+      setDeleteId(null);
+      load();
+    } catch (err) {
+      console.error('Failed to delete fabric:', err);
+    }
   }
 
   async function toggleActive(f: Fabric) {
-    await supabase.from('fabrics').update({ is_active: !f.is_active }).eq('id', f.id);
-    load();
+    try {
+      const [fabricId, propIndexStr] = f.id.split('::');
+      const propIdx = parseInt(propIndexStr, 10);
+
+      const parentDoc = await fetchApi(`/v1/fabrics/${fabricId}`);
+      const updatedProperties = [...(parentDoc.properties || [])];
+
+      updatedProperties[propIdx] = {
+        ...updatedProperties[propIdx],
+        isActive: !f.is_active,
+      };
+
+      await fetchApi(`/v1/admin/fabrics/${fabricId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ properties: updatedProperties }),
+      });
+      load();
+    } catch (err) {
+      console.error('Failed to toggle active status:', err);
+    }
   }
 
   const filtered = fabrics.filter(f =>
@@ -219,12 +475,154 @@ export default function Fabrics() {
         )}
       </div>
 
-      {(modal === 'create' || modal === 'edit') && (
-        <Modal title={modal === 'create' ? 'New Fabric' : 'Edit Fabric'} onClose={() => setModal(null)} size="lg">
+      {modal === 'create' && (
+        <Modal title="New Fabric" onClose={() => setModal(null)} size="lg">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-[#1C1916] mb-1.5 font-bold">Fabric Name <span className="text-[#C8521A]">*</span></label>
+                <input type="text" value={createForm.name} onChange={e => updateCreateField('name', e.target.value)} placeholder="e.g. Premium Silk Aso-oke" className="w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Fabric Description</label>
+                <textarea value={createForm.description} onChange={e => updateCreateField('description', e.target.value)} rows={3} placeholder="Describe the quality, touch and weaving origin…" className="w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A] resize-none" />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E5DFD5] pb-2">
+                <span className="text-sm font-bold text-[#1C1916]">Properties & Variants</span>
+                <button type="button" onClick={addProperty} className="flex items-center gap-1 text-xs font-semibold text-[#C8521A] hover:underline">
+                  <Plus size={14} /> Add Variant
+                </button>
+              </div>
+
+              {createForm.properties.map((p, idx) => (
+                <div key={idx} className="border border-[#E5DFD5] rounded-2xl p-5 space-y-4 bg-[#FAF8F5] relative">
+                  {createForm.properties.length > 1 && (
+                    <button type="button" onClick={() => removeProperty(idx)} className="absolute top-3 right-3 p-1.5 rounded-lg text-[#9A8F87] hover:text-red-600 hover:bg-red-50 transition-colors">
+                      <Trash2 size={15} />
+                    </button>
+                  )}
+                  <p className="text-xs font-bold text-[#6B6460] uppercase tracking-wider">Variant #{idx + 1}</p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Color Name <span className="text-[#C8521A]">*</span></label>
+                      <input type="text" value={p.colorName} onChange={e => updatePropertyField(idx, 'colorName', e.target.value)} placeholder="e.g. Royal Blue" className="w-full bg-white border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Color Code</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={p.colorCode || '#ffffff'}
+                          onChange={e => updatePropertyField(idx, 'colorCode', e.target.value)}
+                          className="w-10 h-10 rounded-lg border border-[#E5DFD5] cursor-pointer p-0.5 bg-white"
+                        />
+                        <input type="text" value={p.colorCode} onChange={e => updatePropertyField(idx, 'colorCode', e.target.value)} placeholder="#4169E1" className="flex-1 bg-white border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Fabric Image <span className="text-[#C8521A]">*</span> <span className="text-[#9A8F87] font-normal">(must upload first)</span></label>
+                      <div className="flex flex-col gap-3">
+                        {p.imageUrl && (
+                          <div className="relative w-28 h-28 rounded-xl border border-[#E5DFD5] overflow-hidden bg-[#F7F3EC] group shrink-0">
+                            <img src={p.imageUrl} alt="" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => updatePropertyField(idx, 'imageUrl', '')}
+                              className="absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <input
+                            type="url"
+                            value={p.imageUrl}
+                            readOnly
+                            placeholder="Upload file to generate URL…"
+                            className="flex-1 border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm bg-[#FAF8F5] text-[#6B6460] cursor-not-allowed focus:outline-none"
+                          />
+                          <label className="bg-white border border-[#E5DFD5] hover:border-[#C8521A] text-[#1C1916] rounded-xl px-4 py-2.5 text-sm font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 select-none">
+                            {p.uploading ? (
+                              <>
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#C8521A] border-t-transparent"></div>
+                                <span>Uploading…</span>
+                              </>
+                            ) : (
+                              <>
+                                <Upload size={16} className="text-[#C8521A]" />
+                                <span>Upload File</span>
+                              </>
+                            )}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={e => handleCreatePropertyFileUpload(idx, e)}
+                              className="hidden"
+                              disabled={p.uploading}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Unit <span className="text-[#C8521A]">*</span></label>
+                      <select value={p.unit} onChange={e => updatePropertyField(idx, 'unit', e.target.value as Fabric['unit'])} className="w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]">
+                        {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Yards Per Unit</label>
+                      <input type="number" min="0.1" step="0.1" value={p.yardsPerUnit} onChange={e => updatePropertyField(idx, 'yardsPerUnit', Number(e.target.value))} className="w-full bg-white border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Price Modifier (₦)</label>
+                      <input type="number" min="0" value={p.priceModifier} onChange={e => updatePropertyField(idx, 'priceModifier', Number(e.target.value))} className="w-full bg-white border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Stock Level</label>
+                      <input type="number" min="0" value={p.stockLevel ?? ''} onChange={e => updatePropertyField(idx, 'stockLevel', e.target.value === '' ? null : Number(e.target.value))} placeholder="Leave blank if not tracked" className="w-full bg-white border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+                    </div>
+
+                    <div className="flex gap-4 sm:col-span-2 pt-2">
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input type="checkbox" checked={p.inStock} onChange={e => updatePropertyField(idx, 'inStock', e.target.checked)} className="w-4 h-4 accent-[#C8521A]" />
+                        <span className="text-sm text-[#1C1916]">In Stock</span>
+                      </label>
+                      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input type="checkbox" checked={p.isActive} onChange={e => updatePropertyField(idx, 'isActive', e.target.checked)} className="w-4 h-4 accent-[#C8521A]" />
+                        <span className="text-sm text-[#1C1916]">Active</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {error && <p className="text-xs text-red-600 mt-4 bg-red-50 border border-red-200 rounded-lg p-2.5">{error}</p>}
+
+          <div className="flex gap-3 mt-6">
+            <button onClick={() => setModal(null)} className="flex-1 border border-[#E5DFD5] text-[#6B6460] rounded-xl py-2.5 text-sm font-medium hover:bg-[#F7F3EC] transition-colors">Cancel</button>
+            <button onClick={handleSave} disabled={saving} className="flex-1 bg-[#C8521A] text-white rounded-xl py-2.5 text-sm font-medium hover:bg-[#b04817] transition-colors disabled:opacity-60">
+              {saving ? 'Creating…' : 'Create Fabric'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {modal === 'edit' && (
+        <Modal title="Edit Fabric" onClose={() => setModal(null)} size="lg">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Color Name <span className="text-[#C8521A]">*</span></label>
-              <input type="text" value={form.color_name} onChange={e => setField('color_name', e.target.value)} placeholder="e.g. Royal Blue Ankara" className="w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+              <input type="text" value={form.color_name} onChange={e => setField('color_name', e.target.value)} placeholder="e.g. Standard Aso-oke — Royal Blue" className="w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
             </div>
 
             <div>
@@ -234,7 +632,7 @@ export default function Fabrics() {
                   type="color"
                   value={form.color_code || '#ffffff'}
                   onChange={e => setField('color_code', e.target.value)}
-                  className="w-10 h-10 rounded-lg border border-[#E5DFD5] cursor-pointer p-0.5"
+                  className="w-10 h-10 rounded-lg border border-[#E5DFD5] cursor-pointer p-0.5 bg-white"
                 />
                 <input type="text" value={form.color_code || ''} onChange={e => setField('color_code', e.target.value)} placeholder="#4169E1" className="flex-1 border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
               </div>
@@ -248,8 +646,50 @@ export default function Fabrics() {
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Image URL <span className="text-[#C8521A]">*</span></label>
-              <input type="url" value={form.image_url} onChange={e => setField('image_url', e.target.value)} placeholder="https://images.pexels.com/…" className="w-full border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C8521A]/30 focus:border-[#C8521A]" />
+              <label className="block text-xs font-semibold text-[#1C1916] mb-1.5">Fabric Image <span className="text-[#C8521A]">*</span></label>
+              <div className="flex flex-col gap-3">
+                {form.image_url && (
+                  <div className="relative w-28 h-28 rounded-xl border border-[#E5DFD5] overflow-hidden bg-[#F7F3EC] group shrink-0">
+                    <img src={form.image_url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setField('image_url', '')}
+                      className="absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={form.image_url}
+                    readOnly
+                    placeholder="Upload file to generate URL…"
+                    className="flex-1 border border-[#E5DFD5] rounded-xl px-4 py-2.5 text-sm bg-[#FAF8F5] text-[#6B6460] cursor-not-allowed focus:outline-none"
+                  />
+                  <label className="bg-[#FAF8F5] border border-[#E5DFD5] hover:border-[#C8521A] text-[#1C1916] rounded-xl px-4 py-2.5 text-sm font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 shrink-0 select-none">
+                    {uploading ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#C8521A] border-t-transparent"></div>
+                        <span>Uploading…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={16} className="text-[#C8521A]" />
+                        <span>Upload File</span>
+                      </>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      disabled={uploading}
+                    />
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div>
@@ -269,23 +709,23 @@ export default function Fabrics() {
 
             <div className="flex flex-col gap-3">
               <label className="block text-xs font-semibold text-[#1C1916]">Flags</label>
-              <label className="flex items-center gap-2.5 cursor-pointer">
+              <label className="flex items-center gap-2.5 cursor-pointer select-none">
                 <input type="checkbox" checked={form.in_stock} onChange={e => setField('in_stock', e.target.checked)} className="w-4 h-4 accent-[#C8521A]" />
                 <span className="text-sm text-[#1C1916]">In Stock</span>
               </label>
-              <label className="flex items-center gap-2.5 cursor-pointer">
+              <label className="flex items-center gap-2.5 cursor-pointer select-none">
                 <input type="checkbox" checked={form.is_active} onChange={e => setField('is_active', e.target.checked)} className="w-4 h-4 accent-[#C8521A]" />
                 <span className="text-sm text-[#1C1916]">Active</span>
               </label>
             </div>
           </div>
 
-          {error && <p className="text-xs text-red-600 mt-3">{error}</p>}
+          {error && <p className="text-xs text-red-600 mt-4 bg-red-50 border border-red-200 rounded-lg p-2.5">{error}</p>}
 
           <div className="flex gap-3 mt-5">
             <button onClick={() => setModal(null)} className="flex-1 border border-[#E5DFD5] text-[#6B6460] rounded-xl py-2.5 text-sm font-medium hover:bg-[#F7F3EC] transition-colors">Cancel</button>
             <button onClick={handleSave} disabled={saving} className="flex-1 bg-[#C8521A] text-white rounded-xl py-2.5 text-sm font-medium hover:bg-[#b04817] transition-colors disabled:opacity-60">
-              {saving ? 'Saving…' : modal === 'create' ? 'Create Fabric' : 'Save Changes'}
+              {saving ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </Modal>
@@ -293,10 +733,12 @@ export default function Fabrics() {
 
       {deleteId && (
         <Modal title="Delete Fabric" onClose={() => setDeleteId(null)} size="sm">
-          <p className="text-sm text-[#6B6460] mb-5">This will permanently delete this fabric. Products linked to it will lose the association.</p>
-          <div className="flex gap-3">
-            <button onClick={() => setDeleteId(null)} className="flex-1 border border-[#E5DFD5] text-[#6B6460] rounded-xl py-2.5 text-sm font-medium hover:bg-[#F7F3EC] transition-colors">Cancel</button>
-            <button onClick={handleDelete} className="flex-1 bg-red-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-red-700 transition-colors">Delete</button>
+          <div className="space-y-4">
+            <p className="text-sm text-[#6B6460]">Are you sure you want to delete this fabric variant? This variant will be removed from the fabric's properties list.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteId(null)} className="flex-1 border border-[#E5DFD5] text-[#6B6460] rounded-xl py-2.5 text-sm font-medium hover:bg-[#F7F3EC] transition-colors">Cancel</button>
+              <button onClick={handleDelete} className="flex-1 bg-red-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-red-700 transition-colors">Delete</button>
+            </div>
           </div>
         </Modal>
       )}
