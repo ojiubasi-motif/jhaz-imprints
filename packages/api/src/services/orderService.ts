@@ -174,6 +174,12 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     if (!mongoProduct) {
       throw new AppError(`Product not found: productId=${item.productId}`, 404);
     }
+    if (mongoProduct.isActive === false) {
+      throw new AppError(
+        `Product "${mongoProduct.name}" is no longer active and cannot be ordered. Please remove it from your cart.`,
+        400
+      );
+    }
 
     // 3b. Fabric — fetch only the single fabric document specified in the item
     let fabricPriceModifier = 0;
