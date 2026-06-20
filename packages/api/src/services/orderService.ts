@@ -386,22 +386,31 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
  * @param reference - Payment reference from Paystack
  * @returns Updated order and payment with processing status
  */
-export async function confirmPayment(reference: string) {
+export async function confirmPayment(
+  reference: string,
+  userId?: string,
+  userRole?: "CUSTOMER" | "ADMIN" | "TAILOR"
+) {
   // Check if payment already processed (idempotency check #1)
   const payment = await prisma.payment.findFirst({
     where: { reference },
+    include: { order: true },
   });
 
   if (!payment) {
     throw new AppError("Payment not found", 404);
   }
 
+  // Authorization check (only if userId/userRole are passed, i.e., authenticated request, not webhook)
+  if (userId && userRole && userRole !== "ADMIN" && userRole !== "TAILOR") {
+    if (payment.order.userId !== userId) {
+      throw new AppError("Forbidden: You do not own this order/payment", 403);
+    }
+  }
+
   // If already completed, return early (idempotency)
   if (payment.status === "COMPLETED") {
-    const order = await prisma.order.findUnique({
-      where: { id: payment.orderId }
-    });
-    return { alreadyProcessed: true, payment, order: parseNotesMetadata(order) };
+    return { alreadyProcessed: true, payment, order: parseNotesMetadata(payment.order) };
   }
 
 
@@ -577,8 +586,12 @@ export async function confirmPayment(reference: string) {
  * @param orderId - Order ID to fetch
  * @returns Order with related data
  */
-export async function getOrderById(userId: string, orderId: string) {
-  console.log(`[orderService] Fetching order: ${orderId} for user: ${userId}`);
+export async function getOrderById(
+  userId: string,
+  orderId: string,
+  userRole: "CUSTOMER" | "ADMIN" | "TAILOR" = "CUSTOMER"
+) {
+  console.log(`[orderService] Fetching order: ${orderId} for user: ${userId} (${userRole})`);
   const order = await prisma.order.findFirst({
     where: { id: orderId },
     include: {
@@ -598,8 +611,8 @@ export async function getOrderById(userId: string, orderId: string) {
     throw new AppError(`Order not found: ${orderId}`, 404);
   }
 
-  // Authorization: user can only view their own orders
-  if (order.userId !== userId) {
+  // Authorization: user can only view their own orders unless they are ADMIN or TAILOR
+  if (userRole !== "ADMIN" && userRole !== "TAILOR" && order.userId !== userId) {
     throw new AppError("Forbidden", 403);
   }
 
@@ -938,7 +951,11 @@ export async function initializeOrderPayment(userId: string, orderId: string, em
 /**
  * Cancel and delete a pending order.
  */
-export async function deletePendingOrder(userId: string, orderId: string) {
+export async function deletePendingOrder(
+  userId: string,
+  orderId: string,
+  userRole: "CUSTOMER" | "ADMIN" | "TAILOR" = "CUSTOMER"
+) {
   const order = await prisma.order.findUnique({
     where: { id: orderId },
   });
@@ -947,7 +964,8 @@ export async function deletePendingOrder(userId: string, orderId: string) {
     throw new AppError("Order not found", 404);
   }
 
-  if (order.userId !== userId) {
+  // Authorization: user can only cancel their own orders unless they are ADMIN
+  if (userRole !== "ADMIN" && order.userId !== userId) {
     throw new AppError("Forbidden", 403);
   }
 
@@ -991,4 +1009,84 @@ export async function deletePendingOrder(userId: string, orderId: string) {
   });
 
   return { success: true };
+}
+
+/**
+ * Get all orders in the system (for admins and tailors).
+ */
+export async function getAllOrders(skip = 0, take = 20) {
+  const orders = await prisma.order.findMany({
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        }
+      },
+      payment: true,
+      statusHistory: true,
+    },
+    skip,
+    take,
+    orderBy: { createdAt: "desc" },
+  });
+
+  const total = await prisma.order.count();
+
+  const parsedOrders = orders.map((o) => parseNotesMetadata(o));
+
+  return { orders: parsedOrders, total, skip, take };
+}
+
+/**
+ * Update an order's status and log to history.
+ */
+export async function updateOrderStatus(
+  orderId: string,
+  input: { status: "PENDING" | "CONFIRMED" | "IN_PRODUCTION" | "COMPLETED" | "CANCELLED"; note?: string },
+  userRole: "CUSTOMER" | "ADMIN" | "TAILOR"
+) {
+  // Authorization check: Only ADMIN and TAILOR can manually update order status
+  if (userRole !== "ADMIN" && userRole !== "TAILOR") {
+    throw new AppError("Forbidden: Insufficient permissions to update order status", 403);
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+  });
+
+  if (!order) {
+    throw new AppError("Order not found", 404);
+  }
+
+  // Prevent transitions from CANCELLED status for data integrity
+  if (order.status === "CANCELLED" && input.status !== "CANCELLED") {
+    throw new AppError("Cannot change status of a cancelled order", 400);
+  }
+
+  // Update order status and write history
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    const updated = await tx.order.update({
+      where: { id: orderId },
+      data: { status: input.status },
+      include: {
+        payment: true,
+        statusHistory: true,
+      }
+    });
+
+    await tx.orderStatusHistory.create({
+      data: {
+        orderId,
+        status: input.status,
+        note: input.note || `Status updated manually to ${input.status} by ${userRole.toLowerCase()}`,
+      },
+    });
+
+    return updated;
+  });
+
+  return parseNotesMetadata(updatedOrder);
 }

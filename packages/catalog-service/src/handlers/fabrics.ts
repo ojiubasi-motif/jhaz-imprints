@@ -20,13 +20,18 @@ import { publishCatalogEvent } from "../redis";
  * List all active fabrics.
  *
  * Query params:
- *   (none currently — small dataset, no pagination needed)
+ *   page  — page number (optional)
+ *   limit — items per page (optional, max: 50)
  */
 export async function listFabricsHandler(req: Request, res: Response) {
-  const fabrics = await fabricService.listFabrics();
+  const includeDeleted = req.query.includeDeleted === "true";
+  const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : undefined;
+  const limit = req.query.limit ? Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10))) : undefined;
+
+  const result = await fabricService.listFabrics({ includeDeleted, page, limit });
   res.json({
     msg: "fabrics list",
-    data: fabrics,
+    data: result,
     type: "SUCCESS",
     code: 600,
   });

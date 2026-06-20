@@ -32,6 +32,15 @@ const PUBLIC_ROUTES = [
   { path: '/api/auth/login',                  method: 'POST' },
   { path: '/api/auth/register',               method: 'POST' },
   { path: '/api/auth/refresh',                method: 'GET'  },  // refresh token uses its own mechanism
+  // ── Password reset — no JWT required (user is not logged in) ─────────────
+  // SECURITY (OWASP Forgot Password CS): These endpoints intentionally bypass
+  // JWT auth. The forgot-password endpoint is protected by its own rate limiter.
+  // The reset-password endpoint is protected by the CSPRNG token in the body.
+  { path: '/api/auth/forgot-password',        method: 'POST' },
+  { path: '/api/auth/reset-password',         method: 'POST' },
+  // ── CSRF token and MFA verification endpoints ────────────────────────────
+  { path: '/api/auth/csrf-token',             method: 'GET'  },
+  { path: '/api/auth/admin/verify-otp',       method: 'POST' },
   // ── Webhook routes — no JWT, secured by provider HMAC signature instead ──
   { path: '/api/orders/webhook/paystack',     method: 'POST' },  // Paystack push events (HMAC-SHA512)
 ];
@@ -64,6 +73,11 @@ function isPublicRoute(req) {
 
   // Product detail pages are public: GET /api/v1/products/<anything>
   if (req.method === 'GET' && /^\/api\/v1\/products\/[^/]+\/?$/.test(normalizedPath)) {
+    return true;
+  }
+
+  // Fabric detail pages are public: GET /api/v1/fabrics/<anything>
+  if (req.method === 'GET' && /^\/api\/v1\/fabrics\/[^/]+\/?$/.test(normalizedPath)) {
     return true;
   }
 
@@ -107,6 +121,19 @@ function authenticateToken(req, res, next) {
 
   } catch (err) {
     const isExpired = err.name === 'TokenExpiredError';
+    const eventType = isExpired ? 'token.expired' : 'token.invalid';
+
+    // SECURITY (OWASP — Logging and Monitoring CS):
+    // Log all auth failures with structured JSON so monitoring tools
+    // (e.g. Datadog, CloudWatch, Grafana Loki) can alert on anomalies.
+    console.log(JSON.stringify({
+      event: eventType,
+      ip: req.ip,
+      path: req.path,
+      method: req.method,
+      ts: new Date().toISOString(),
+    }));
+
     return res.status(401).json({
       error:   isExpired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
       message: isExpired

@@ -88,7 +88,7 @@ vi.mock("../paystackService", () => ({
 }));
 
 // Import after mocks are set up
-import { confirmPayment, createOrder, getUserMeasurements, createMeasurement, updateMeasurement } from "../orderService";
+import { confirmPayment, createOrder, getUserMeasurements, createMeasurement, updateMeasurement, getOrderById, getAllOrders, updateOrderStatus } from "../orderService";
 import { computeOrderTotal } from "../pricingEngine";
 
 describe("orderService — Integration Tests", () => {
@@ -345,6 +345,67 @@ describe("orderService — Integration Tests", () => {
       });
       expect(payments).toHaveLength(1);
     });
+
+    it("should enforce ownership checks if userId and userRole are passed to confirmPayment", async () => {
+      const user = await prisma.user.create({
+        data: {
+          email: "test@example.com",
+          firstName: "Owner",
+          lastName: "User",
+          phone: "+1234567802",
+          role: "CUSTOMER",
+          password: "hashed_password",
+        },
+      });
+
+      const otherUser = await prisma.user.create({
+        data: {
+          email: "test2@example.com",
+          firstName: "Other",
+          lastName: "User",
+          phone: "+1234567803",
+          role: "CUSTOMER",
+          password: "hashed_password",
+        },
+      });
+
+      const order = await prisma.order.create({
+        data: {
+          userId: user.id,
+          items: [],
+          totalAmount: 50000,
+          status: "PENDING",
+        },
+      });
+
+      const paymentReference = `PAY-AUTH-${Date.now()}`;
+      await prisma.payment.create({
+        data: {
+          orderId: order.id,
+          reference: paymentReference,
+          amount: 50000,
+          status: "PENDING",
+          provider: "PAYSTACK",
+        },
+      });
+
+      // 1. Owner can verify
+      const result = await confirmPayment(paymentReference, user.id, "CUSTOMER");
+      expect(result).toBeDefined();
+
+      // 2. Admin can verify
+      const resultAdmin = await confirmPayment(paymentReference, "admin-id", "ADMIN");
+      expect(resultAdmin).toBeDefined();
+
+      // 3. Tailor can verify
+      const resultTailor = await confirmPayment(paymentReference, "tailor-id", "TAILOR");
+      expect(resultTailor).toBeDefined();
+
+      // 4. Non-owner customer is blocked with Forbidden
+      await expect(
+        confirmPayment(paymentReference, otherUser.id, "CUSTOMER")
+      ).rejects.toThrow("Forbidden");
+    });
   });
 
   describe("Pricing Engine Integration", () => {
@@ -515,6 +576,157 @@ describe("orderService — Integration Tests", () => {
       });
       expect(updated.profileName).toBe("Profile 1 Updated");
       expect(updated.chest).toBe(92);
+    });
+  });
+
+  describe("Authorization and Administrative Features", () => {
+    it("should allow ADMIN and TAILOR to list all orders (getAllOrders)", async () => {
+      const userA = await prisma.user.create({
+        data: {
+          email: "test@example.com",
+          firstName: "UserA",
+          lastName: "Test",
+          password: "hashed_password",
+        },
+      });
+
+      const userB = await prisma.user.create({
+        data: {
+          email: "test2@example.com",
+          firstName: "UserB",
+          lastName: "Test",
+          password: "hashed_password",
+        },
+      });
+
+      // Create an order for UserA
+      const orderA = await prisma.order.create({
+        data: {
+          userId: userA.id,
+          items: [],
+          totalAmount: 10000,
+          status: "PENDING",
+        },
+      });
+
+      // Create an order for UserB
+      const orderB = await prisma.order.create({
+        data: {
+          userId: userB.id,
+          items: [],
+          totalAmount: 20000,
+          status: "PENDING",
+        },
+      });
+
+      // Retrieve all orders
+      const result = await getAllOrders();
+      expect(result.orders.length).toBeGreaterThanOrEqual(2);
+      
+      const retrievedIds = result.orders.map((o) => o.id);
+      expect(retrievedIds).toContain(orderA.id);
+      expect(retrievedIds).toContain(orderB.id);
+    });
+
+    it("should enforce role-aware access controls in getOrderById", async () => {
+      const customer = await prisma.user.create({
+        data: {
+          email: "test@example.com",
+          firstName: "Customer",
+          lastName: "Test",
+          password: "hashed_password",
+        },
+      });
+
+      const otherCustomer = await prisma.user.create({
+        data: {
+          email: "test2@example.com",
+          firstName: "Other",
+          lastName: "Customer",
+          password: "hashed_password",
+        },
+      });
+
+      const order = await prisma.order.create({
+        data: {
+          userId: customer.id,
+          items: [],
+          totalAmount: 15000,
+          status: "PENDING",
+        },
+      });
+
+      // 1. Owner customer can view
+      const res1 = await getOrderById(customer.id, order.id, "CUSTOMER");
+      expect(res1.id).toBe(order.id);
+
+      // 2. ADMIN can view other user's order
+      const res2 = await getOrderById("admin-user-id", order.id, "ADMIN");
+      expect(res2.id).toBe(order.id);
+
+      // 3. TAILOR can view other user's order
+      const res3 = await getOrderById("tailor-user-id", order.id, "TAILOR");
+      expect(res3.id).toBe(order.id);
+
+      // 4. Non-owner customer is blocked
+      await expect(
+        getOrderById(otherCustomer.id, order.id, "CUSTOMER")
+      ).rejects.toThrow("Forbidden");
+    });
+
+    it("should restrict updateOrderStatus to ADMIN and TAILOR, and log history", async () => {
+      const user = await prisma.user.create({
+        data: {
+          email: "test@example.com",
+          firstName: "Owner",
+          lastName: "Test",
+          password: "hashed_password",
+        },
+      });
+
+      const order = await prisma.order.create({
+        data: {
+          userId: user.id,
+          items: [],
+          totalAmount: 15000,
+          status: "CONFIRMED",
+        },
+      });
+
+      // 1. CUSTOMER cannot update status
+      await expect(
+        updateOrderStatus(order.id, { status: "IN_PRODUCTION" }, "CUSTOMER")
+      ).rejects.toThrow("Forbidden");
+
+      // 2. TAILOR can update status
+      const resTailor = await updateOrderStatus(order.id, { status: "IN_PRODUCTION", note: "Started sewing" }, "TAILOR");
+      expect(resTailor.status).toBe("IN_PRODUCTION");
+
+      // Verify status history
+      const historyTailor = await prisma.orderStatusHistory.findFirst({
+        where: { orderId: order.id, status: "IN_PRODUCTION" }
+      });
+      expect(historyTailor).toBeDefined();
+      expect(historyTailor?.note).toBe("Started sewing");
+
+      // 3. ADMIN can update status
+      const resAdmin = await updateOrderStatus(order.id, { status: "COMPLETED" }, "ADMIN");
+      expect(resAdmin.status).toBe("COMPLETED");
+
+      // Verify status history
+      const historyAdmin = await prisma.orderStatusHistory.findFirst({
+        where: { orderId: order.id, status: "COMPLETED" }
+      });
+      expect(historyAdmin).toBeDefined();
+
+      // 4. Update to CANCELLED
+      const resCancelled = await updateOrderStatus(order.id, { status: "CANCELLED" }, "ADMIN");
+      expect(resCancelled.status).toBe("CANCELLED");
+
+      // 5. Try updating transition from CANCELLED -> should fail
+      await expect(
+        updateOrderStatus(order.id, { status: "CONFIRMED" }, "ADMIN")
+      ).rejects.toThrow("Cannot change status of a cancelled order");
     });
   });
 });

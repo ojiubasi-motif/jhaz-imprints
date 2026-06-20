@@ -17,6 +17,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 
 import requestLogger from './middleware/logger.js';
 import authenticateToken from './middleware/auth.js';
@@ -43,6 +44,12 @@ const limiter = rateLimit({
 // ─── Global Middleware ────────────────────────────────────────────────────────
 app.use(requestLogger);      // (1) attach timer + log on response
 
+// (1.5) SECURITY: HTTP security headers (OWASP HTTP Headers CS).
+// helmet() sets Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options,
+// Referrer-Policy, and more. It must be on the internet-facing GATEWAY — not the
+// internal API service — since gateway is the only component clients contact directly.
+app.use(helmet());
+
 // (2) CORS configuration — trim whitespace from origins list
 const corsOrigin = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
@@ -60,7 +67,7 @@ app.use(cors({
   origin: corsOrigin,
   credentials: true,
 }));
-app.use(express.json());     // (3) parse JSON bodies
+app.use(express.json({ limit: '100kb' }));     // (3) parse JSON bodies with 100kb limit
 // ─── Trust Proxy ──────────────────────────────────────────────────────────────
 // Railway (and other PaaS) use a reverse proxy in front of the gateway.
 // This MUST be set before the rate limiter so express-rate-limit reads
@@ -91,6 +98,11 @@ const server = app.listen(PORT, () => {
   console.log(`   Catalog Service → ${process.env.CATALOG_SERVICE_URL}`);
   console.log(`   Core API        → ${process.env.CORE_API_URL}`);
 });
+
+// ─── DoS Prevention: HTTP Server Timeouts ─────────────────────────────────────
+// Protects the server from Slowloris / Slow HTTP attacks by closing inactive sockets.
+server.headersTimeout = 15000; // 15 seconds
+server.requestTimeout = 30000; // 30 seconds
 
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
 // Railway sends SIGTERM on deploy/restart. Stop accepting new connections,

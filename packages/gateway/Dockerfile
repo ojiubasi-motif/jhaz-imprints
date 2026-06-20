@@ -18,7 +18,7 @@ WORKDIR /app
 COPY packages/gateway/package.json ./
 
 # Install all dependencies
-RUN npm install
+RUN npm install --ignore-scripts
 
 # Copy gateway source files
 COPY packages/gateway/server.js     ./
@@ -45,7 +45,7 @@ COPY --from=builder /app/middleware     ./middleware
 COPY --from=builder /app/package.json   ./
 
 # Production-only install
-RUN npm install --omit=dev
+RUN npm install --omit=dev --ignore-scripts
 
 USER appuser
 

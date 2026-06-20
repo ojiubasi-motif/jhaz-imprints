@@ -39,7 +39,7 @@ export async function listProductsHandler(req: AuthenticatedRequest, res: Respon
     occasion: occasion as string | undefined,
     search: search as string | undefined,
     page: page ? Math.max(1, parseInt(page as string, 10)) : 1,
-    limit: limit ? parseInt(limit as string, 10) : 12,
+    limit: limit ? Math.min(50, Math.max(1, parseInt(limit as string, 10))) : 12,
     isActive: targetIsActive,
   });
 

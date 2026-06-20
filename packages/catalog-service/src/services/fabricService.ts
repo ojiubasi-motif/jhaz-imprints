@@ -18,15 +18,32 @@ export interface ListFabricsQuery {
  * Returns a simple array — no pagination needed since there are typically ≤ 200 fabrics.
  */
 export async function listFabrics(query: ListFabricsQuery = {}) {
-  const { includeDeleted = false } = query;
+  const { includeDeleted = false, page, limit } = query;
 
   const filter = includeDeleted ? {} : { deletedAt: null };
 
-  const fabrics = await Fabric.find(filter)
+  const dbQuery = Fabric.find(filter)
     .lean()
     .sort({ name: 1 })
     .select("-__v");
 
+  if (page !== undefined || limit !== undefined) {
+    const p = page ? Math.max(1, page) : 1;
+    const l = limit ? Math.min(50, Math.max(1, limit)) : 12;
+    const skip = (p - 1) * l;
+
+    const fabrics = await dbQuery.skip(skip).limit(l);
+    const total = await Fabric.countDocuments(filter);
+
+    return {
+      items: fabrics,
+      total,
+      page: p,
+      limit: l,
+    };
+  }
+
+  const fabrics = await dbQuery;
   return fabrics;
 }
 

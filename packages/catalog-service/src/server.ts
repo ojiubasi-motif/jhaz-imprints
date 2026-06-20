@@ -20,8 +20,13 @@ dotenv.config();
 
 const app = express();
 
+// ─── Trust Proxy ──────────────────────────────────────────────────────────────
+// Downstream service is behind a gateway proxy. Trust proxy header (X-Forwarded-For)
+// so the rate limiters can correctly read the original client IP.
+app.set('trust proxy', 1);
+
 app.use(helmet());
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
 // app.get('/health', (req, res) => {
 //     res.status(200).json({ status: 'ok', service: 'catalog-service' });
@@ -100,6 +105,11 @@ async function startServer() {
         server = app.listen(PORT, () => {
             console.log(`🚀 Catalog Service running on port ${PORT}`);
         });
+
+        // ─── DoS Prevention: HTTP Server Timeouts ─────────────────────────────────────
+        // Protects the server from Slowloris / Slow HTTP attacks by closing inactive sockets.
+        server.headersTimeout = 15000; // 15 seconds
+        server.requestTimeout = 30000; // 30 seconds
     } catch (error) {
         console.error('❌ Failed to start Catalog Service:', error);
         process.exit(1);

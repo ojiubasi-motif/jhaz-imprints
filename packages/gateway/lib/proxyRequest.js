@@ -77,6 +77,12 @@ async function proxyRequest(req, res, targetBase) {
     forwardHeaders['x-internal-secret'] = INTERNAL_SECRET;
   }
 
+  // ── Client IP Forwarding ──────────────────────────────────────────────────
+  // Forward the resolved client IP to downstream services (using req.ip which
+  // respects trust proxy setting). Downstream services with 'trust proxy' enabled
+  // will correctly parse this as the true client IP.
+  forwardHeaders['x-forwarded-for'] = req.ip;
+
   try {
     // For multipart uploads: stream req directly so the file bytes reach downstream.
     // For JSON/other: pass the already-parsed req.body.
@@ -91,6 +97,7 @@ async function proxyRequest(req, res, targetBase) {
         parse_response: false,    // don't attempt JSON parse — pass through raw bytes
         parse_cookies:  false,    // keep set-cookie in headers, don't move to .cookies
         json:           !isMultipart && req.is('application/json'), // only for JSON bodies
+        follow_max:     0,        // DoS & SSRF: do not follow redirects downstream
       },
     );
 

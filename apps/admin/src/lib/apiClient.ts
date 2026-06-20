@@ -77,6 +77,31 @@ export async function fetchApi(
     }
   }
 
+  // Inject CSRF token if this is a state-changing auth request
+  const isAuthPost = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method?.toUpperCase() || '') &&
+    (endpoint.startsWith('/auth/login') ||
+     endpoint.startsWith('/auth/register') ||
+     endpoint.startsWith('/auth/forgot-password') ||
+     endpoint.startsWith('/auth/admin/verify-otp'));
+
+  if (isAuthPost) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/csrf-token`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const body = await response.json();
+        const csrfToken = body?.data?.csrfToken;
+        if (csrfToken) {
+          headers['X-CSRF-Token'] = csrfToken;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to inject CSRF token:', err);
+    }
+  }
+
   const { skipAuth: _skipAuth, ...fetchOptions } = options;
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...fetchOptions,

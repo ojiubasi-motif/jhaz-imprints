@@ -193,12 +193,19 @@ export async function fetchTransaction(reference: string): Promise<any> {
  * @returns boolean - Whether the signature is valid
  */
 export function verifyWebhookSignature(payload: any, signature: string): boolean {
-  if (!PAYSTACK_SECRET_KEY) return false;
+  if (!PAYSTACK_SECRET_KEY || !signature) return false;
   
   const hash = crypto
     .createHmac("sha512", PAYSTACK_SECRET_KEY)
     .update(typeof payload === "string" ? payload : JSON.stringify(payload))
     .digest("hex");
     
-  return hash === signature;
+  try {
+    const a = Buffer.from(hash, "utf-8");
+    const b = Buffer.from(signature, "utf-8");
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }

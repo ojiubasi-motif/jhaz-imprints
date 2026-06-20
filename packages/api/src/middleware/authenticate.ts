@@ -16,6 +16,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -27,13 +28,31 @@ export interface AuthenticatedRequest extends Request {
 
 const INTERNAL_SECRET = process.env.INTERNAL_GATEWAY_SECRET;
 
-export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-  // ── Step 1: Verify request came from the gateway ──────────────────────────
-  // Reject any request that does not carry the correct internal secret.
-  // This prevents clients from bypassing the gateway and hitting this service directly.
-  const incomingSecret = req.headers["x-internal-secret"];
+/**
+ * Constant-time secret comparison to prevent timing-oracle attacks.
+ * SECURITY (OWASP — CWE-208): Standard string === is not constant-time;
+ * a precise timing side-channel can reveal the secret length or prefix.
+ * crypto.timingSafeEqual() always runs in O(n) regardless of where strings diverge.
+ */
+function verifySecret(incoming: string | string[] | undefined): boolean {
+  if (!INTERNAL_SECRET || !incoming || Array.isArray(incoming)) return false;
+  try {
+    const a = Buffer.from(incoming);
+    const b = Buffer.from(INTERNAL_SECRET);
+    // Buffers must be same length for timingSafeEqual; length inequality is itself a fail.
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
 
-  if (!INTERNAL_SECRET || incomingSecret !== INTERNAL_SECRET) {
+export function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  // ── Step 1: Verify request came from the gateway ────────────────────────────
+  // Reject any request that does not carry the correct internal secret.
+  // SECURITY: Uses constant-time comparison (crypto.timingSafeEqual) to
+  // prevent timing side-channel attacks on the shared secret.
+  if (!verifySecret(req.headers["x-internal-secret"])) {
     return res.status(403).json({
       msg: "Forbidden: Direct access to internal service is not permitted.",
       data: null,
@@ -74,9 +93,8 @@ export function verifyGatewayOrigin(req: Request, res: Response, next: NextFunct
     return next();
   }
 
-  const incomingSecret = req.headers["x-internal-secret"];
-
-  if (!INTERNAL_SECRET || incomingSecret !== INTERNAL_SECRET) {
+  // SECURITY: constant-time comparison (see verifySecret above)
+  if (!verifySecret(req.headers["x-internal-secret"])) {
     return res.status(403).json({
       msg: "Forbidden: Direct access to internal service is not permitted.",
       data: null,

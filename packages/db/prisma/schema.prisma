@@ -43,10 +43,37 @@ model User {
   password  String
   role      Role     @default(CUSTOMER)
   refreshToken String?
-  
+
+  // ── Brute-force lockout fields ────────────────────────────────────────────
+  // SECURITY: Per-account lockout independent of IP-based rate limiting.
+  // OWASP Authentication CS — Login Throttling / Account Lockout.
+  // failedLoginAttempts is reset to 0 on every successful login.
+  // lockedUntil is set to a future DateTime after threshold breaches:
+  //   ≥5  failures  → 15-minute lock
+  //   ≥10 failures  → 1-hour lock
+  //   ≥20 failures  → permanent lock (admin intervention required)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
+  // ── Password reset fields (OWASP Forgot Password CS) ─────────────────────
+  // SECURITY:
+  //   - resetPasswordToken stores a SHA-256 HASH of the raw token (never raw).
+  //     If the DB is compromised, attackers cannot use stored hashes directly.
+  //   - resetPasswordExpires enforces a 15-minute TTL on the token.
+  //   - Both are nulled after use (single-use enforcement).
+  //   - @unique on the hash ensures no two users can have the same token.
+  resetPasswordToken   String?   @unique
+  resetPasswordExpires DateTime?
+
+  // ── Last login and Admin OTP fields ───────────────────────────────────────
+  lastLoginAt          DateTime?
+  lastLoginIp          String?
+  adminOtpHash         String?
+  adminOtpExpires      DateTime?
+
   measurements    Measurement[]
   orders          Order[]
-  
+
   deletedAt DateTime?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

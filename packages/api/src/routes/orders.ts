@@ -5,16 +5,13 @@
 
 import { Router } from "express";
 import { authenticate, type AuthenticatedRequest } from "../middleware/authenticate";
+import { authorize } from "../middleware/authorize";
 import { asyncHandler } from "../utils/asyncHandler";
 import { validateBody } from "../middleware/validateBody";
-import { OrderCreateSchema, MeasurementCreateSchema } from "@jhaz-imprints/shared";
+import { OrderCreateSchema, MeasurementCreateSchema, OrderStatusUpdateSchema } from "@jhaz-imprints/shared";
 import * as orderHandlers from "../handlers/orders";
 
 const router = Router();
-
-router.get("/test-update", (req, res) => {
-  res.json({ msg: "Server is updated!" });
-});
 
 /**
  * POST /api/orders
@@ -142,13 +139,28 @@ router.delete(
 
 /**
  * GET /api/orders
- * Admin view (optional, currently same as my-orders)
+ * Admin view — list all orders in the system.
  */
 router.get(
   "/",
   authenticate,
+  authorize("ADMIN", "TAILOR"),
   asyncHandler((req: AuthenticatedRequest, res) =>
-    orderHandlers.getUserOrdersHandler(req, res)
+    orderHandlers.getAllOrdersHandler(req, res)
+  )
+);
+
+/**
+ * PATCH /api/orders/:orderId/status
+ * Update order status (Admin/Tailor access).
+ */
+router.patch(
+  "/:orderId/status",
+  authenticate,
+  authorize("ADMIN", "TAILOR"),
+  validateBody(OrderStatusUpdateSchema),
+  asyncHandler((req: AuthenticatedRequest, res) =>
+    orderHandlers.updateOrderStatusHandler(req, res)
   )
 );
 

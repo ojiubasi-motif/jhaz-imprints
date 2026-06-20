@@ -12,11 +12,43 @@ export const authorize = (...allowedRoles: Array<"CUSTOMER" | "ADMIN" | "TAILOR"
     const user = req.user;
 
     if (!user) {
-      return res.status(401).json({ error: "Unauthorized" });
+      // SECURITY (OWASP — Logging & Monitoring CS):
+      // Log authentication failure at the controller/middleware level.
+      console.log(JSON.stringify({
+        event: "authentication.failed",
+        ip: req.ip,
+        path: req.path,
+        method: req.method,
+        ts: new Date().toISOString(),
+      }));
+
+      return res.status(401).json({
+        msg: "Unauthorized: Missing authentication credentials.",
+        data: null,
+        type: "AUTHENTICATION_FAILED",
+        code: 602,
+      });
     }
 
     if (!allowedRoles.includes(user.role)) {
-      return res.status(403).json({ error: "Forbidden: insufficient permissions" });
+      // SECURITY (OWASP — Logging & Monitoring CS):
+      // Log authorization failure in a structured format for intrusion detection.
+      console.log(JSON.stringify({
+        event: "authorization.failed",
+        userId: user.id,
+        role: user.role,
+        ip: req.ip,
+        path: req.path,
+        method: req.method,
+        ts: new Date().toISOString(),
+      }));
+
+      return res.status(403).json({
+        msg: "Forbidden: Insufficient permissions to access this resource.",
+        data: null,
+        type: "AUTHORIZATION_FAILED",
+        code: 605,
+      });
     }
 
     next();

@@ -72,7 +72,7 @@ export async function getOrderHandler(req: AuthenticatedRequest, res: Response) 
   }
 
   const { orderId } = req.params;
-  const order = await orderService.getOrderById(req.user.id, orderId);
+  const order = await orderService.getOrderById(req.user.id, orderId, req.user.role);
 
   const sanitizedOrder = order as any;
 
@@ -94,7 +94,8 @@ export async function getUserOrdersHandler(req: AuthenticatedRequest, res: Respo
   }
 
   const skip = parseInt(req.query.skip as string) || 0;
-  const take = parseInt(req.query.take as string) || 20;
+  const rawTake = parseInt(req.query.take as string) || 20;
+  const take = Math.min(rawTake, 100);
 
   const result = await orderService.getUserOrders(req.user.id, skip, take);
 
@@ -123,11 +124,11 @@ export async function verifyPaymentHandler(req: AuthenticatedRequest, res: Respo
 
   const { reference } = req.params;
 
-  if (!reference) {
-    throw new AppError("Payment reference is required", 400);
+  if (!reference || typeof reference !== "string" || !/^[a-zA-Z0-9_\-]+$/.test(reference)) {
+    throw new AppError("Invalid payment reference format", 400);
   }
 
-  const result = await orderService.confirmPayment(reference);
+  const result = await orderService.confirmPayment(reference, req.user.id, req.user.role);
 
   res.json({
     msg: "payment verified successfully",
@@ -258,11 +259,59 @@ export async function deleteOrderHandler(req: AuthenticatedRequest, res: Respons
   }
 
   const { orderId } = req.params;
-  await orderService.deletePendingOrder(req.user.id, orderId);
+  await orderService.deletePendingOrder(req.user.id, orderId, req.user.role);
 
   res.json({
     msg: "order cancelled successfully",
     data: null,
+    type: "SUCCESS",
+    code: 600
+  });
+}
+
+/**
+ * GET /api/orders
+ * Admin view — retrieve all orders in the system (paginated).
+ */
+export async function getAllOrdersHandler(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
+
+  const skip = parseInt(req.query.skip as string) || 0;
+  const rawTake = parseInt(req.query.take as string) || 20;
+  const take = Math.min(rawTake, 100);
+
+  const result = await orderService.getAllOrders(skip, take);
+
+  res.json({
+    msg: "all orders retrieved",
+    data: {
+      items: result.orders,
+      total: result.total,
+      skip: result.skip,
+      take: result.take,
+    },
+    type: "SUCCESS",
+    code: 600
+  });
+}
+
+/**
+ * PATCH /api/orders/:orderId/status
+ * Admin/Tailor route — update order status and log to history.
+ */
+export async function updateOrderStatusHandler(req: AuthenticatedRequest, res: Response) {
+  if (!req.user) {
+    throw new AppError("User not authenticated", 401);
+  }
+
+  const { orderId } = req.params;
+  const updatedOrder = await orderService.updateOrderStatus(orderId, req.body, req.user.role);
+
+  res.json({
+    msg: "order status updated successfully",
+    data: updatedOrder,
     type: "SUCCESS",
     code: 600
   });

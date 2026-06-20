@@ -44,6 +44,13 @@ export function addImagesField(product: any): any {
 }
 
 /**
+ * Helper to escape special regular expression characters in user search query.
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * List all active products with optional filters and name search.
  * Returns a paginated result using mongoose-paginate-v2.
  *
@@ -108,8 +115,8 @@ export async function listProducts(query: ListProductsQuery) {
   }
 
   if (search && typeof search === "string") {
-    // Case-insensitive partial match on product name
-    filter.name = { $regex: search.trim(), $options: "i" };
+    // Case-insensitive partial match on product name (sanitized to prevent injection)
+    filter.name = { $regex: escapeRegExp(search.trim()), $options: "i" };
   }
 
   const paginatedProduct = Product as unknown as PaginateModel<IProduct>;

@@ -16,14 +16,20 @@ import { startCatalogEventWorker } from "./queues/catalogEventWorker";
 
 const app = express();
 
+// ─── Trust Proxy ──────────────────────────────────────────────────────────────
+// Downstream service is behind a gateway proxy. Trust proxy header (X-Forwarded-For)
+// so the rate limiters can correctly read the original client IP.
+app.set("trust proxy", 1);
+
 // Middleware
 app.use(helmet());
 
 // Paystack webhook needs the raw body bytes for HMAC-SHA512 signature verification.
 // This MUST come before express.json() so the body isn't parsed first.
-app.use('/api/orders/webhook/paystack', express.raw({ type: 'application/json' }));
+// Limit raw body size to 100kb to prevent Denial of Service via payload flooding.
+app.use('/api/orders/webhook/paystack', express.raw({ type: 'application/json', limit: '100kb' }));
 
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 app.use(cookieParser());
 
 // Initialize databases
@@ -99,9 +105,15 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   const type = err.type || (statusCode >= 500 ? "SERVER_ERROR" : "FAILED");
   const code = err.code || 602;
 
+  // SECURITY (OWASP — Authorization / Information Disclosure):
+  // For unhandled 500 internal errors, we must return a generic message rather than
+  // leaking internal details (SQL queries, stack traces, database schema info) from err.message.
+  const isInternal = statusCode >= 500 && !isAppError(err);
+  const msg = isInternal ? "Internal server error" : (err.message || "Internal server error");
+
   // Quizio-style envelope
   res.status(statusCode).json({
-    msg: err.message || "Internal server error",
+    msg,
     data: err.errors || null, // For validation errors
     type: type,
     code: code

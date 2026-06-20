@@ -26,6 +26,11 @@ const PORT = process.env.PORT || 3000;
 // Initialize databases before listening
 await initializeDatabases();
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`[Server] Listening on port ${PORT}`);
 });
+
+// ─── DoS Prevention: HTTP Server Timeouts ─────────────────────────────────────
+// Protects the server from Slowloris / Slow HTTP attacks by closing inactive sockets.
+server.headersTimeout = 15000; // 15 seconds
+server.requestTimeout = 30000; // 30 seconds

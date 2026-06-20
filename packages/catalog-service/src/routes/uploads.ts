@@ -89,8 +89,8 @@ router.delete(
     try {
       const { publicId } = req.body;
 
-      if (!publicId) {
-        throw new AppError("publicId is required", 400);
+      if (!publicId || typeof publicId !== "string" || !/^[a-zA-Z0-9_\-\/]+$/.test(publicId)) {
+        throw new AppError("Invalid publicId format", 400);
       }
 
       await uploadService.deleteFromCloudinary(publicId);
