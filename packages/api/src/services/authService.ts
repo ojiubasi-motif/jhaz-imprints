@@ -565,8 +565,32 @@ export class AuthService {
 // ─── Email helper for password reset flow ─────────────────────────────────────
 // Reuses the same multi-provider email logic as the notification worker.
 async function sendResetEmail(to: string, subject: string, html: string): Promise<void> {
-  const resendApiKey = process.env.RESEND_API_KEY;
+  const emailUser = process.env.EMAIL_USER;
+  const emailPass = process.env.EMAIL_PASSWORD;
 
+  // Primary: Nodemailer SMTP (Gmail)
+  if (emailUser && emailPass) {
+    try {
+      const nodemailer = await import("nodemailer");
+      const transporter = nodemailer.default.createTransport({
+        service: "gmail",
+        auth: { user: emailUser, pass: emailPass },
+      });
+      await transporter.sendMail({
+        from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
+        to,
+        subject,
+        html,
+      });
+      return; // Success, return early!
+    } catch (smtpError: any) {
+      console.error(JSON.stringify({ event: "email_delivery.smtp_error", error: smtpError?.message, ts: new Date().toISOString() }));
+      // Fall through to Resend fallback
+    }
+  }
+
+  // Fallback: Resend API
+  const resendApiKey = process.env.RESEND_API_KEY;
   if (resendApiKey) {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -588,17 +612,6 @@ async function sendResetEmail(to: string, subject: string, html: string): Promis
     return;
   }
 
-  // Fallback: Nodemailer SMTP
-  const nodemailer = await import("nodemailer");
-  const transporter = nodemailer.default.createTransport({
-    service: "gmail",
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASSWORD },
-  });
-  await transporter.sendMail({
-    from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
-    to,
-    subject,
-    html,
-  });
+  throw new Error("No email provider configured or active (both Nodemailer SMTP and Resend are unavailable or failed).");
 }
 
