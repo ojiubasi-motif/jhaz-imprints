@@ -448,8 +448,8 @@ export class AuthService {
     // SECURITY (OWASP — URL Tokens): "Don't rely on the Host header while
     // creating the reset URLs to avoid Host Header Injection attacks."
     let frontendUrl = user.role === "ADMIN"
-      ? "https://ji-admin.vercel.app"
-      : "https://jhazimprints.vercel.app";
+      ? "http://localhost:5173"
+      : "http://localhost:5174";
 
     if (process.env.NODE_ENV !== "production") {
       frontendUrl = user.role === "ADMIN"
