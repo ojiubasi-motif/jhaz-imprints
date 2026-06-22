@@ -541,6 +541,25 @@ export class AuthService {
     // SECURITY: Return nothing — do NOT issue tokens here.
     // The user must re-authenticate via the normal login flow.
   }
+
+  static async updateProfile(userId: string, input: { firstName?: string; lastName?: string }) {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        firstName: input.firstName,
+        lastName: input.lastName,
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        createdAt: true,
+      }
+    });
+    return updatedUser;
+  }
 }
 
 // ─── Email helper for password reset flow ─────────────────────────────────────

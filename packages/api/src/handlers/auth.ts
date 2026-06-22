@@ -218,6 +218,30 @@ export const meHandler = async (req: AuthenticatedRequest, res: Response) => {
 };
 
 /**
+ * Updates current user's profile details (first name, last name).
+ */
+export const updateProfileHandler = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ msg: "Unauthorized", type: "FAILED", code: 602 });
+    }
+
+    const { firstName, lastName } = req.body;
+    const updatedUser = await AuthService.updateProfile(user.id, { firstName, lastName });
+
+    res.status(200).json({
+      msg: "profile updated successfully",
+      data: { user: updatedUser },
+      type: "SUCCESS",
+      code: 600
+    });
+  } catch (error: any) {
+    res.status(500).json({ msg: "Internal server error", type: "FAILED", code: 602 });
+  }
+};
+
+/**
  * Handles forgot-password requests.
  *
  * SECURITY (OWASP Forgot Password CS — Forgot Password Request):
