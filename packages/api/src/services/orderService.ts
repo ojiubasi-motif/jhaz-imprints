@@ -3,7 +3,7 @@
  * Handles transactional consistency across Postgres and payment webhooks.
  */
 
-import { prisma } from "@jhaz-imprints/db";
+import { prisma, OrderStatus } from "@jhaz-imprints/db";
 import { Product, Fabric } from "@jhaz-imprints/catalog-db";
 import { OrderCreateSchema, type MeasurementCreate } from "@jhaz-imprints/shared";
 import { computeOrderTotal } from "./pricingEngine";
@@ -1045,7 +1045,7 @@ export async function getAllOrders(skip = 0, take = 20) {
  */
 export async function updateOrderStatus(
   orderId: string,
-  input: { status: "PENDING" | "CONFIRMED" | "IN_PRODUCTION" | "COMPLETED" | "CANCELLED"; note?: string },
+  input: { status: OrderStatus; note?: string },
   userRole: "CUSTOMER" | "ADMIN" | "TAILOR"
 ) {
   // Authorization check: Only ADMIN and TAILOR can manually update order status

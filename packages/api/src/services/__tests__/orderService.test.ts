@@ -710,12 +710,12 @@ describe("orderService — Integration Tests", () => {
       expect(historyTailor?.note).toBe("Started sewing");
 
       // 3. ADMIN can update status
-      const resAdmin = await updateOrderStatus(order.id, { status: "COMPLETED" }, "ADMIN");
-      expect(resAdmin.status).toBe("COMPLETED");
+      const resAdmin = await updateOrderStatus(order.id, { status: "DELIVERED" }, "ADMIN");
+      expect(resAdmin.status).toBe("DELIVERED");
 
       // Verify status history
       const historyAdmin = await prisma.orderStatusHistory.findFirst({
-        where: { orderId: order.id, status: "COMPLETED" }
+        where: { orderId: order.id, status: "DELIVERED" }
       });
       expect(historyAdmin).toBeDefined();
 

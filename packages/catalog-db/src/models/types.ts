@@ -114,6 +114,8 @@ export interface IProduct extends Document {
 
   seoMeta: ISeoMeta;
   isActive: boolean;
+  fabricOptions?: any[];
+  colorOptions?: any[];
   createdAt: Date;
   updatedAt: Date;
 }
