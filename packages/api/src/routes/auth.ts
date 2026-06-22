@@ -9,8 +9,17 @@ const router = Router();
 // Rate limiter for auth endpoints to prevent brute-force attacks
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 requests per windowMs
+  max: 15, // Limit each IP to 15 requests per windowMs (prevents self-lockout while keeping brute-force window tight)
   message: { error: "Too many requests from this IP, please try again after 15 minutes" },
+});
+
+// Rate limiter specifically for CSRF token fetches
+const csrfLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // Limit each IP to 50 requests per windowMs to allow repeated forms access without heavy CPU exhaustion risk
+  message: { error: "Too many requests. Please try again after 15 minutes" },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // SECURITY (OWASP Forgot Password CS — Forgot Password Request):
@@ -35,7 +44,7 @@ const resetPasswordLimiter = rateLimit({
 });
 
 // CSRF Token fetch route (public, rate-limited)
-router.get("/csrf-token", authLimiter, csrfTokenHandler);
+router.get("/csrf-token", csrfLimiter, csrfTokenHandler);
 
 // Apply rate limiter and CSRF protection to register and login
 router.post("/register", authLimiter, verifyCsrf, registerHandler);
