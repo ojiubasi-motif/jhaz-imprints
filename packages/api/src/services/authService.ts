@@ -451,7 +451,7 @@ export class AuthService {
       ? "http://localhost:5173"
       : "http://localhost:5174";
 
-    if (process.env.NODE_ENV !== "production") {
+    if (process.env.NODE_ENV === "production") {
       frontendUrl = user.role === "ADMIN"
         ? (process.env.ADMIN_FRONTEND_URL || "http://localhost:5173")
         : (process.env.FRONTEND_URL || "http://localhost:5174");
