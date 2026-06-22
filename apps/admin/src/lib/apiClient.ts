@@ -24,9 +24,17 @@ async function performRefresh(): Promise<string | null> {
 
     const data = await response.json();
     const newAccessToken = data?.data?.access_token;
+    const user = data?.data?.user;
 
     if (newAccessToken) {
       tokenStore.setToken(newAccessToken);
+      if (user && user.id) {
+        tokenStore.setCachedUser({
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+        });
+      }
       return newAccessToken;
     }
 
@@ -135,9 +143,22 @@ export async function fetchApi(
     throw new Error(data?.msg || data?.message || `API error: ${response.statusText}`);
   }
 
+  let result = data;
   if (data && typeof data === 'object' && 'data' in data) {
-    return data.data;
+    result = data.data;
   }
 
-  return data;
+  // If the response contains a user profile object, merge the cached firstName/lastName if IDs match
+  if (result && typeof result === 'object' && result.user && result.user.id) {
+    const cached = tokenStore.getCachedUser();
+    if (cached && cached.id === result.user.id) {
+      result.user = {
+        ...result.user,
+        firstName: cached.firstName || result.user.firstName,
+        lastName: cached.lastName || result.user.lastName,
+      };
+    }
+  }
+
+  return result;
 }

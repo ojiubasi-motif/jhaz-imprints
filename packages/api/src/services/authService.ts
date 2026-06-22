@@ -444,10 +444,19 @@ export class AuthService {
       },
     });
 
-    // Build reset URL using FRONTEND_URL env var — never req.headers.host.
+    // Build reset URL using role-specific target domains — never req.headers.host.
     // SECURITY (OWASP — URL Tokens): "Don't rely on the Host header while
     // creating the reset URLs to avoid Host Header Injection attacks."
-    const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
+    let frontendUrl = user.role === "ADMIN"
+      ? "https://ji-admin.vercel.app"
+      : "https://jhazimprints.vercel.app";
+
+    if (process.env.NODE_ENV !== "production") {
+      frontendUrl = user.role === "ADMIN"
+        ? (process.env.ADMIN_FRONTEND_URL || "http://localhost:5173")
+        : (process.env.FRONTEND_URL || "http://localhost:5174");
+    }
+    frontendUrl = frontendUrl.replace(/\/$/, "");
     const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
 
     const template = passwordResetEmail(resetUrl, 15);
