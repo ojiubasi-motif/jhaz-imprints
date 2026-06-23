@@ -192,13 +192,29 @@ export function startNotificationWorker() {
 }
 
 // --- Email Helper ---
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
-  },
-});
+let smtpTransporter: any = null;
+
+function getTransporter() {
+  if (smtpTransporter) return smtpTransporter;
+
+  const emailUser = process.env.EMAIL_USER ? process.env.EMAIL_USER.replace(/\s+/g, "").replace(/^["']|["']$/g, "") : undefined;
+  const emailPass = process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.replace(/\s+/g, "").replace(/^["']|["']$/g, "") : undefined;
+
+  if (!emailUser || !emailPass) {
+    throw new Error("SMTP credentials missing or incomplete (EMAIL_USER or EMAIL_PASSWORD not set).");
+  }
+
+  smtpTransporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: {
+      user: emailUser,
+      pass: emailPass,
+    },
+  });
+  return smtpTransporter;
+}
 
 async function sendEmail(to: string, subject: string, html: string) {
   console.log(`[Worker] Sending email to ${to} with subject: ${subject}`);
@@ -237,6 +253,7 @@ async function sendEmail(to: string, subject: string, html: string) {
 
   // Fallback to Nodemailer SMTP
   try {
+    const transporter = getTransporter();
     const result = await transporter.sendMail({
       from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
       to,

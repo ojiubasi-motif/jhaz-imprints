@@ -565,15 +565,17 @@ export class AuthService {
 // ─── Email helper for password reset flow ─────────────────────────────────────
 // Reuses the same multi-provider email logic as the notification worker.
 async function sendResetEmail(to: string, subject: string, html: string): Promise<void> {
-  const emailUser = process.env.EMAIL_USER ? process.env.EMAIL_USER.replace(/\s+/g, "") : undefined;
-  const emailPass = process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.replace(/\s+/g, "") : undefined;
+  const emailUser = process.env.EMAIL_USER ? process.env.EMAIL_USER.replace(/\s+/g, "").replace(/^["']|["']$/g, "") : undefined;
+  const emailPass = process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.replace(/\s+/g, "").replace(/^["']|["']$/g, "") : undefined;
 
   // Primary: Nodemailer SMTP (Gmail)
   if (emailUser && emailPass) {
     try {
       const nodemailer = await import("nodemailer");
       const transporter = nodemailer.default.createTransport({
-        service: "gmail",
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
         auth: { user: emailUser, pass: emailPass },
       });
       await transporter.sendMail({
