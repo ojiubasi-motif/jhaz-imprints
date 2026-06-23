@@ -565,10 +565,39 @@ export class AuthService {
 // ─── Email helper for password reset flow ─────────────────────────────────────
 // Reuses the same multi-provider email logic as the notification worker.
 async function sendResetEmail(to: string, subject: string, html: string): Promise<void> {
+  // Primary: Resend API (HTTP, instant in cloud environments like Railway)
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: process.env.EMAIL_FROM || "onboarding@resend.dev",
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+      if (response.ok) {
+        return; // Success, return early!
+      }
+      const errText = await response.text();
+      console.error(JSON.stringify({ event: "email_delivery.resend_error", error: `Resend API returned ${response.status}: ${errText}`, ts: new Date().toISOString() }));
+      // Fall through to SMTP fallback
+    } catch (resendError: any) {
+      console.error(JSON.stringify({ event: "email_delivery.resend_error", error: resendError?.message, ts: new Date().toISOString() }));
+      // Fall through to SMTP fallback
+    }
+  }
+
+  // Fallback: Nodemailer SMTP (Gmail)
   const emailUser = process.env.EMAIL_USER ? process.env.EMAIL_USER.replace(/\s+/g, "").replace(/^["']|["']$/g, "") : undefined;
   const emailPass = process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.replace(/\s+/g, "").replace(/^["']|["']$/g, "") : undefined;
 
-  // Primary: Nodemailer SMTP (Gmail)
   if (emailUser && emailPass) {
     try {
       const nodemailer = await import("nodemailer");
@@ -587,33 +616,9 @@ async function sendResetEmail(to: string, subject: string, html: string): Promis
       return; // Success, return early!
     } catch (smtpError: any) {
       console.error(JSON.stringify({ event: "email_delivery.smtp_error", error: smtpError?.message, ts: new Date().toISOString() }));
-      // Fall through to Resend fallback
     }
   }
 
-  // Fallback: Resend API
-  const resendApiKey = process.env.RESEND_API_KEY;
-  if (resendApiKey) {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM || "onboarding@resend.dev",
-        to: [to],
-        subject,
-        html,
-      }),
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Email delivery failed (Resend): ${response.status} ${errText}`);
-    }
-    return;
-  }
-
-  throw new Error("No email provider configured or active (both Nodemailer SMTP and Resend are unavailable or failed).");
+  throw new Error("No email provider configured or active (both Resend and Nodemailer SMTP are unavailable or failed).");
 }
 
