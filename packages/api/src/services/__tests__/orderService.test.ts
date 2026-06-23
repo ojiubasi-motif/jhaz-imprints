@@ -99,6 +99,11 @@ describe("orderService — Integration Tests", () => {
     "test@example.com",
     "test2@example.com",
     "test3@example.com",
+    "cust@example.com",
+    "tailorA@example.com",
+    "tailorB@example.com",
+    "tailor-user@example.com",
+    "tailor-user-2@example.com",
   ];
 
   beforeEach(async () => {
@@ -664,7 +669,29 @@ describe("orderService — Integration Tests", () => {
       const res2 = await getOrderById("admin-user-id", order.id, "ADMIN");
       expect(res2.id).toBe(order.id);
 
-      // 3. TAILOR can view other user's order
+      // 3. TAILOR is blocked if not assigned
+      await expect(
+        getOrderById("tailor-user-id", order.id, "TAILOR")
+      ).rejects.toThrow("Forbidden");
+
+      // Create tailor user in DB first
+      await prisma.user.create({
+        data: {
+          id: "tailor-user-id",
+          email: "tailor-user@example.com",
+          firstName: "Tailor",
+          password: "hashed_password",
+          role: "TAILOR",
+        },
+      });
+
+      // Assign to tailor
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { tailorId: "tailor-user-id" },
+      });
+
+      // Now TAILOR can view the assigned order
       const res3 = await getOrderById("tailor-user-id", order.id, "TAILOR");
       expect(res3.id).toBe(order.id);
 
@@ -698,8 +725,25 @@ describe("orderService — Integration Tests", () => {
         updateOrderStatus(order.id, { status: "IN_PRODUCTION" }, "CUSTOMER")
       ).rejects.toThrow("Forbidden");
 
+      // Create tailor user in DB first
+      await prisma.user.create({
+        data: {
+          id: "tailor-user-id",
+          email: "tailor-user-2@example.com",
+          firstName: "Tailor",
+          password: "hashed_password",
+          role: "TAILOR",
+        },
+      });
+
+      // Assign order to tailor first
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { tailorId: "tailor-user-id" },
+      });
+
       // 2. TAILOR can update status
-      const resTailor = await updateOrderStatus(order.id, { status: "IN_PRODUCTION", note: "Started sewing" }, "TAILOR");
+      const resTailor = await updateOrderStatus(order.id, { status: "IN_PRODUCTION", note: "Started sewing" }, "TAILOR", "tailor-user-id");
       expect(resTailor.status).toBe("IN_PRODUCTION");
 
       // Verify status history
@@ -727,6 +771,78 @@ describe("orderService — Integration Tests", () => {
       await expect(
         updateOrderStatus(order.id, { status: "CONFIRMED" }, "ADMIN")
       ).rejects.toThrow("Cannot change status of a cancelled order");
+    });
+
+    it("should enforce tailor assignment and restrict status transitions for TAILOR role", async () => {
+      const customer = await prisma.user.create({
+        data: {
+          email: "cust@example.com",
+          firstName: "Cust",
+          password: "hashed_password",
+        },
+      });
+
+      const tailorA = await prisma.user.create({
+        data: {
+          email: "tailorA@example.com",
+          firstName: "TailorA",
+          password: "hashed_password",
+          role: "TAILOR",
+        },
+      });
+
+      const tailorB = await prisma.user.create({
+        data: {
+          email: "tailorB@example.com",
+          firstName: "TailorB",
+          password: "hashed_password",
+          role: "TAILOR",
+        },
+      });
+
+      // 1. Create order assigned to tailorA
+      const order = await prisma.order.create({
+        data: {
+          userId: customer.id,
+          items: [],
+          totalAmount: 15000,
+          status: "CONFIRMED",
+          tailorId: tailorA.id,
+        },
+      });
+
+      // 2. Tailor B tries to view -> should fail with Forbidden
+      await expect(
+        getOrderById(tailorB.id, order.id, "TAILOR")
+      ).rejects.toThrow("Forbidden: You are not assigned to this order");
+
+      // 3. Tailor B tries to update -> should fail with Forbidden
+      await expect(
+        updateOrderStatus(order.id, { status: "IN_PRODUCTION" }, "TAILOR", tailorB.id)
+      ).rejects.toThrow("Forbidden: You are not assigned to this order");
+
+      // 4. Tailor A tries to update to an unallowed status (e.g. DISPATCHED) -> should fail
+      await expect(
+        updateOrderStatus(order.id, { status: "DISPATCHED" }, "TAILOR", tailorA.id)
+      ).rejects.toThrow("Forbidden: Tailors can only transition orders to IN_PRODUCTION or READY states");
+
+      // 5. Tailor A updates status to IN_PRODUCTION -> should succeed
+      const res1 = await updateOrderStatus(order.id, { status: "IN_PRODUCTION" }, "TAILOR", tailorA.id);
+      expect(res1.status).toBe("IN_PRODUCTION");
+
+      // 6. Tailor A updates status to READY -> should succeed
+      const res2 = await updateOrderStatus(order.id, { status: "READY" }, "TAILOR", tailorA.id);
+      expect(res2.status).toBe("READY");
+
+      // 7. Tailor A tries to update again from READY state -> should fail because READY is advanced
+      await expect(
+        updateOrderStatus(order.id, { status: "IN_PRODUCTION" }, "TAILOR", tailorA.id)
+      ).rejects.toThrow("Forbidden: Tailors cannot transition orders that are ready, dispatched, delivered, or cancelled");
+
+      // 8. Admin can assign to Tailor B and transition status
+      const resAdmin = await updateOrderStatus(order.id, { status: "CONFIRMED", tailorId: tailorB.id }, "ADMIN", "admin-id");
+      expect(resAdmin.status).toBe("CONFIRMED");
+      expect(resAdmin.tailorId).toBe(tailorB.id);
     });
   });
 });

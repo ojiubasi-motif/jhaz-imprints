@@ -201,8 +201,8 @@ services:
     image: postgres:15-alpine
     container_name: jhaz-postgres
     restart: unless-stopped
-    # No host port — PostgreSQL is internal to catalog-net only.
-    # To inspect locally: docker exec -it jhaz-postgres psql -U $POSTGRES_USER -d $POSTGRES_DB
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

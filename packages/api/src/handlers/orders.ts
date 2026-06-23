@@ -282,7 +282,7 @@ export async function getAllOrdersHandler(req: AuthenticatedRequest, res: Respon
   const rawTake = parseInt(req.query.take as string) || 20;
   const take = Math.min(rawTake, 100);
 
-  const result = await orderService.getAllOrders(skip, take);
+  const result = await orderService.getAllOrders(skip, take, req.user.role, req.user.id);
 
   res.json({
     msg: "all orders retrieved",
@@ -307,7 +307,7 @@ export async function updateOrderStatusHandler(req: AuthenticatedRequest, res: R
   }
 
   const { orderId } = req.params;
-  const updatedOrder = await orderService.updateOrderStatus(orderId, req.body, req.user.role);
+  const updatedOrder = await orderService.updateOrderStatus(orderId, req.body, req.user.role, req.user.id);
 
   res.json({
     msg: "order status updated successfully",

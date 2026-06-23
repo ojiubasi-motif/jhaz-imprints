@@ -65,6 +65,7 @@ export type OrderMeasurement = z.infer<typeof OrderMeasurementSchema>;
 export const OrderStatusUpdateSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "IN_PRODUCTION", "READY", "DISPATCHED", "DELIVERED", "CANCELLED"]),
   note: z.string().max(500, "Note cannot exceed 500 characters").optional(),
+  tailorId: z.string().nullable().optional(),
 });
 
 export type OrderStatusUpdate = z.infer<typeof OrderStatusUpdateSchema>;

@@ -74,7 +74,8 @@ model User {
   adminOtpExpires      DateTime?
 
   measurements    Measurement[]
-  orders          Order[]
+  orders          Order[]  @relation("UserOrders")
+  tailoredOrders  Order[]  @relation("TailorOrders")
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -111,7 +112,9 @@ model Measurement {
 model Order {
   id                  String   @id @default(cuid())
   userId              String
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User     @relation("UserOrders", fields: [userId], references: [id], onDelete: Cascade)
+  tailorId            String?
+  tailor              User?    @relation("TailorOrders", fields: [tailorId], references: [id])
   
   // Measurement is now stored inline inside the items JSON array.
   // The FK is retained for backward-compatibility with pre-migration orders.

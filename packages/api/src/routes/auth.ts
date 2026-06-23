@@ -1,8 +1,9 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { registerHandler, loginHandler, meHandler, logoutHandler, refreshHandler, forgotPasswordHandler, resetPasswordHandler, verifyAdminOtpHandler, csrfTokenHandler, updateProfileHandler } from "../handlers/auth";
+import { registerHandler, loginHandler, meHandler, logoutHandler, refreshHandler, forgotPasswordHandler, resetPasswordHandler, verifyAdminOtpHandler, csrfTokenHandler, updateProfileHandler, getTailorsHandler } from "../handlers/auth";
 import { authenticate } from "../middleware/authenticate";
 import { verifyCsrf } from "../middleware/verifyCsrf";
+import { authorize } from "../middleware/authorize";
 
 const router = Router();
 
@@ -62,6 +63,9 @@ router.post("/reset-password", resetPasswordLimiter, resetPasswordHandler);
 // Protected route to get current user details
 router.get("/me", authenticate, meHandler);
 router.put("/profile", authenticate, verifyCsrf, updateProfileHandler);
+
+// Admin-only route to list tailors
+router.get("/tailors", authenticate, authorize("ADMIN"), getTailorsHandler);
 
 export default router;
 

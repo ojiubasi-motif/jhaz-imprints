@@ -598,6 +598,14 @@ export async function getOrderById(
       measurement: true,
       statusHistory: true,
       payment: true,
+      tailor: {
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        }
+      }
     },
   });
 
@@ -614,6 +622,11 @@ export async function getOrderById(
   // Authorization: user can only view their own orders unless they are ADMIN or TAILOR
   if (userRole !== "ADMIN" && userRole !== "TAILOR" && order.userId !== userId) {
     throw new AppError("Forbidden", 403);
+  }
+
+  // TAILOR role can only view orders assigned to them
+  if (userRole === "TAILOR" && order.tailorId !== userId) {
+    throw new AppError("Forbidden: You are not assigned to this order", 403);
   }
 
   if (order.status === "PENDING") {
@@ -1014,8 +1027,14 @@ export async function deletePendingOrder(
 /**
  * Get all orders in the system (for admins and tailors).
  */
-export async function getAllOrders(skip = 0, take = 20) {
+export async function getAllOrders(skip = 0, take = 20, userRole?: string, userId?: string) {
+  const where: any = {};
+  if (userRole === "TAILOR") {
+    where.tailorId = userId;
+  }
+
   const orders = await prisma.order.findMany({
+    where,
     include: {
       user: {
         select: {
@@ -1027,13 +1046,21 @@ export async function getAllOrders(skip = 0, take = 20) {
       },
       payment: true,
       statusHistory: true,
+      tailor: {
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+        }
+      }
     },
     skip,
     take,
     orderBy: { createdAt: "desc" },
   });
 
-  const total = await prisma.order.count();
+  const total = await prisma.order.count({ where });
 
   const parsedOrders = orders.map((o) => parseNotesMetadata(o));
 
@@ -1045,8 +1072,9 @@ export async function getAllOrders(skip = 0, take = 20) {
  */
 export async function updateOrderStatus(
   orderId: string,
-  input: { status: OrderStatus; note?: string },
-  userRole: "CUSTOMER" | "ADMIN" | "TAILOR"
+  input: { status: OrderStatus; note?: string; tailorId?: string | null },
+  userRole: "CUSTOMER" | "ADMIN" | "TAILOR",
+  userId?: string
 ) {
   // Authorization check: Only ADMIN and TAILOR can manually update order status
   if (userRole !== "ADMIN" && userRole !== "TAILOR") {
@@ -1061,19 +1089,49 @@ export async function updateOrderStatus(
     throw new AppError("Order not found", 404);
   }
 
+  // Tailor authorization check: Tailor can only modify their assigned orders
+  if (userRole === "TAILOR" && order.tailorId !== userId) {
+    throw new AppError("Forbidden: You are not assigned to this order", 403);
+  }
+
   // Prevent transitions from CANCELLED status for data integrity
   if (order.status === "CANCELLED" && input.status !== "CANCELLED") {
     throw new AppError("Cannot change status of a cancelled order", 400);
   }
 
-  // Update order status and write history
+  // Tailor transition logic constraints
+  if (userRole === "TAILOR") {
+    const allowedStatuses: OrderStatus[] = ["IN_PRODUCTION", "READY"];
+    if (!allowedStatuses.includes(input.status)) {
+      throw new AppError("Forbidden: Tailors can only transition orders to IN_PRODUCTION or READY states", 403);
+    }
+    const allowedCurrentStatuses: OrderStatus[] = ["PENDING", "CONFIRMED", "IN_PRODUCTION"];
+    if (!allowedCurrentStatuses.includes(order.status)) {
+      throw new AppError("Forbidden: Tailors cannot transition orders that are ready, dispatched, delivered, or cancelled", 403);
+    }
+  }
+
+  // Update order status, write history, and assign tailor if provided (and user is ADMIN)
   const updatedOrder = await prisma.$transaction(async (tx) => {
+    const updateData: any = { status: input.status };
+    if (userRole === "ADMIN" && input.tailorId !== undefined) {
+      updateData.tailorId = input.tailorId;
+    }
+
     const updated = await tx.order.update({
       where: { id: orderId },
-      data: { status: input.status },
+      data: updateData,
       include: {
         payment: true,
         statusHistory: true,
+        tailor: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          }
+        }
       }
     });
 

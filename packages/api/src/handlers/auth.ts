@@ -3,6 +3,7 @@ import { RegisterSchema, LoginSchema, ForgotPasswordSchema, ResetPasswordSchema 
 import { AuthService } from "../services/authService";
 import type { AuthenticatedRequest } from "../middleware/authenticate";
 import { generateCsrfToken } from "../utils/csrfToken";
+import { prisma } from "@jhaz-imprints/db";
 
 const COOKIE_NAME = process.env.NODE_ENV === "production" ? "__Secure-sid" : "sid";
 
@@ -332,6 +333,36 @@ export const csrfTokenHandler = async (req: Request, res: Response) => {
       msg: "Failed to generate CSRF token",
       type: "FAILED",
       code: 602
+    });
+  }
+};
+
+/**
+ * Retrieve all tailors in the system.
+ */
+export const getTailorsHandler = async (req: Request, res: Response) => {
+  try {
+    const tailors = await prisma.user.findMany({
+      where: { role: "TAILOR" },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      },
+    });
+
+    res.status(200).json({
+      msg: "tailors retrieved successfully",
+      data: tailors,
+      type: "SUCCESS",
+      code: 600,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      msg: "Failed to retrieve tailors",
+      type: "FAILED",
+      code: 602,
     });
   }
 };
