@@ -206,8 +206,8 @@ function getTransporter() {
 
   smtpTransporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
+    port: 587,
+    secure: false, // Use STARTTLS on port 587
     auth: {
       user: emailUser,
       pass: emailPass,

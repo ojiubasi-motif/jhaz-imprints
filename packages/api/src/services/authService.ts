@@ -574,8 +574,8 @@ async function sendResetEmail(to: string, subject: string, html: string): Promis
       const nodemailer = await import("nodemailer");
       const transporter = nodemailer.default.createTransport({
         host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
+        port: 587,
+        secure: false, // Use STARTTLS on port 587
         auth: { user: emailUser, pass: emailPass },
       });
       await transporter.sendMail({
