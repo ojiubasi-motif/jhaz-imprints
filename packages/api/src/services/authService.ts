@@ -565,7 +565,7 @@ export class AuthService {
 // ─── Email helper for password reset flow ─────────────────────────────────────
 // Reuses the same multi-provider email logic as the notification worker.
 async function sendResetEmail(to: string, subject: string, html: string): Promise<void> {
-  const emailUser = process.env.EMAIL_USER;
+  const emailUser = process.env.EMAIL_USER ? process.env.EMAIL_USER.replace(/\s+/g, "") : undefined;
   const emailPass = process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.replace(/\s+/g, "") : undefined;
 
   // Primary: Nodemailer SMTP (Gmail)
