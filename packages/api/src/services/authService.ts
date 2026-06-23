@@ -608,7 +608,7 @@ async function sendResetEmail(to: string, subject: string, html: string): Promis
         auth: { user: emailUser, pass: emailPass },
       });
       await transporter.sendMail({
-        from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
+        from: process.env.EMAIL_FROM || "orders@jhazimprints.shop",
         to,
         subject,
         html,

@@ -255,7 +255,7 @@ async function sendEmail(to: string, subject: string, html: string) {
   try {
     const transporter = getTransporter();
     const result = await transporter.sendMail({
-      from: process.env.EMAIL_FROM || "noreply@jhaz-imprints.com",
+      from: process.env.EMAIL_FROM || "orders@jhazimprints.shop",
       to,
       subject,
       html,
