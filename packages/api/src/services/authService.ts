@@ -566,7 +566,7 @@ export class AuthService {
 // Reuses the same multi-provider email logic as the notification worker.
 async function sendResetEmail(to: string, subject: string, html: string): Promise<void> {
   const emailUser = process.env.EMAIL_USER;
-  const emailPass = process.env.EMAIL_PASSWORD;
+  const emailPass = process.env.EMAIL_PASSWORD ? process.env.EMAIL_PASSWORD.replace(/\s+/g, "") : undefined;
 
   // Primary: Nodemailer SMTP (Gmail)
   if (emailUser && emailPass) {
