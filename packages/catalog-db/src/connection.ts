@@ -39,14 +39,18 @@ export async function connectMongoDB(retryAttempt = 0): Promise<Connection> {
 
     console.log("[MongoDB] Connected successfully");
 
-    // Handle connection events
-    connection.on("disconnected", () => {
-      console.warn("[MongoDB] Disconnected");
-    });
+    // Handle connection events once to prevent event listener leaks
+    if (connection.listenerCount("disconnected") === 0) {
+      connection.on("disconnected", () => {
+        console.warn("[MongoDB] Disconnected");
+      });
+    }
 
-    connection.on("error", (error) => {
-      console.error("[MongoDB] Connection error:", error);
-    });
+    if (connection.listenerCount("error") === 0) {
+      connection.on("error", (error) => {
+        console.error("[MongoDB] Connection error:", error);
+      });
+    }
 
     return connection;
   } catch (error) {

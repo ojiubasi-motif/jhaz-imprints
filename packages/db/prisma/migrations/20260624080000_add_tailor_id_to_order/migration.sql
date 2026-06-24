@@ -1,0 +1,6 @@
+-- AlterTable
+ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "tailorId" TEXT;
+
+-- AddForeignKey
+ALTER TABLE "Order" DROP CONSTRAINT IF EXISTS "Order_tailorId_fkey";
+ALTER TABLE "Order" ADD CONSTRAINT "Order_tailorId_fkey" FOREIGN KEY ("tailorId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
