@@ -21,7 +21,7 @@ import { AppError } from "../errors/AppError";
  *   limit     — items per page (default: 12, max: 50)
  */
 export async function listProductsHandler(req: AuthenticatedRequest, res: Response) {
-  const { category, gender, occasion, search, page, limit, isActive } = req.query;
+  const { category, fabricCategory, gender, occasion, search, page, limit, isActive } = req.query;
 
   // Restrict access to draft/inactive products to admin/tailor only
   let targetIsActive = isActive as string | undefined;
@@ -35,6 +35,7 @@ export async function listProductsHandler(req: AuthenticatedRequest, res: Respon
 
   const result = await productService.listProducts({
     category: category as string | undefined,
+    fabricCategory: fabricCategory as string | undefined,
     gender: gender as string | undefined,
     occasion: occasion as string | undefined,
     search: search as string | undefined,

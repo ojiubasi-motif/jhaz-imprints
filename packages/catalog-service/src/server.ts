@@ -10,6 +10,8 @@ import categoryRouter from './routes/categories';
 import adminCategoryRouter from './routes/adminCategories';
 import fabricRouter from './routes/fabrics';
 import adminFabricRouter from './routes/adminFabrics';
+import fabricCategoryRouter from './routes/fabricCategories';
+import adminFabricCategoryRouter from './routes/adminFabricCategories';
 import type { ErrorRequestHandler } from 'express';
 import { connectMongoDB } from '@jhaz-imprints/catalog-db';
 import { getMongoDBConnection } from '@jhaz-imprints/catalog-db/connection';
@@ -55,10 +57,12 @@ app.use(verifyGatewayOrigin);
 // Mount routes
 app.use('/api/v1/categories', categoryRouter);
 app.use('/api/v1/fabrics', fabricRouter);
+app.use('/api/v1/fabric-categories', fabricCategoryRouter);
 app.use('/api/v1/products', productRouter);
 app.use('/api/v1/admin/categories', adminCategoryRouter);
 app.use('/api/v1/admin/fabrics', adminFabricRouter);
 app.use('/api/v1/admin/products', adminProductRouter);
+app.use('/api/v1/admin/fabric-categories', adminFabricCategoryRouter);
 app.use('/api/v1/admin/uploads', uploadRouter);
 
 // 404 catch-all — must come after all routes

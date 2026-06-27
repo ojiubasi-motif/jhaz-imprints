@@ -4,13 +4,14 @@
  */
 
 import type { PaginateModel } from "mongoose";
-import { Product } from "@jhaz-imprints/catalog-db";
+import { Product, FabricCategory } from "@jhaz-imprints/catalog-db";
 import type { IProduct } from "@jhaz-imprints/catalog-db";
 import { getCategories } from "./categoryService";
 import { AppError } from "../errors/AppError";
 
 export interface ListProductsQuery {
   category?: string;   // category slug — filters by categories.slug in the product
+  fabricCategory?: string; // fabric category slug or id
   gender?: string;
   occasion?: string;
   search?: string;
@@ -58,7 +59,7 @@ function escapeRegExp(str: string): string {
  *   GET /api/products?category=agbada&gender=men&search=elegant&page=1&limit=12
  */
 export async function listProducts(query: ListProductsQuery) {
-  const { category, gender, occasion, search, page = 1, limit = 12, isActive } = query;
+  const { category, fabricCategory, gender, occasion, search, page = 1, limit = 12, isActive } = query;
 
   const filter: Record<string, unknown> = {};
 
@@ -82,6 +83,21 @@ export async function listProducts(query: ListProductsQuery) {
     }
     // Filter on the embedded categories array
     filter["categories.slug"] = category;
+  }
+
+  if (fabricCategory) {
+    const isObjectId = /^[a-f\d]{24}$/i.test(fabricCategory);
+    let fcDoc;
+    if (isObjectId) {
+      fcDoc = await FabricCategory.findById(fabricCategory);
+    } else {
+      fcDoc = await FabricCategory.findOne({ slug: fabricCategory });
+    }
+    if (fcDoc) {
+      filter.fabrics = { $in: fcDoc.fabrics };
+    } else {
+      filter.fabrics = { $in: [] };
+    }
   }
 
   if (gender) {

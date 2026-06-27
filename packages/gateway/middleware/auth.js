@@ -29,6 +29,8 @@ const PUBLIC_ROUTES = [
   { path: '/api/v1/categories/',              method: 'GET'  },
   { path: '/api/v1/fabrics',                  method: 'GET'  },  // fabrics listing
   { path: '/api/v1/fabrics/',                 method: 'GET'  },
+  { path: '/api/v1/fabric-categories',        method: 'GET'  },  // fabric categories listing
+  { path: '/api/v1/fabric-categories/',       method: 'GET'  },
   { path: '/api/auth/login',                  method: 'POST' },
   { path: '/api/auth/register',               method: 'POST' },
   { path: '/api/auth/refresh',                method: 'GET'  },  // refresh token uses its own mechanism
@@ -78,6 +80,11 @@ function isPublicRoute(req) {
 
   // Fabric detail pages are public: GET /api/v1/fabrics/<anything>
   if (req.method === 'GET' && /^\/api\/v1\/fabrics\/[^/]+\/?$/.test(normalizedPath)) {
+    return true;
+  }
+
+  // Fabric category detail pages are public: GET /api/v1/fabric-categories/<anything>
+  if (req.method === 'GET' && /^\/api\/v1\/fabric-categories\/[^/]+\/?$/.test(normalizedPath)) {
     return true;
   }
 

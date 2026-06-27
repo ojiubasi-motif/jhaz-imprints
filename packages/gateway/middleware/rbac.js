@@ -41,6 +41,7 @@ const PERMISSIONS = {
     { prefix: '/api/v1/products',    methods: ['GET']                          },
     { prefix: '/api/v1/categories',  methods: ['GET']                          },
     { prefix: '/api/v1/fabrics',     methods: ['GET']                          },
+    { prefix: '/api/v1/fabric-categories', methods: ['GET']                    },
     // Customers can register, login, manage their own profile
     { prefix: '/api/auth',           methods: ['GET', 'POST', 'PUT', 'PATCH']  },
     // Customers can manage their own measurements profile
@@ -56,6 +57,7 @@ const PERMISSIONS = {
     { prefix: '/api/v1/products',    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/v1/categories',  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/v1/fabrics',     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+    { prefix: '/api/v1/fabric-categories', methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/v1/admin',       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/auth',           methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
     { prefix: '/api/orders',         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
@@ -64,6 +66,7 @@ const PERMISSIONS = {
     // Tailors can browse products, fabrics, and view orders assigned to them
     { prefix: '/api/v1/products',        methods: ['GET'] },
     { prefix: '/api/v1/fabrics',         methods: ['GET'] },
+    { prefix: '/api/v1/fabric-categories', methods: ['GET'] },
     // SECURITY: exact:true — TAILOR may only GET this specific admin sub-path
     // and must not gain access to sibling admin paths (e.g. /api/v1/admin/users)
     // added in future without an RBAC review.

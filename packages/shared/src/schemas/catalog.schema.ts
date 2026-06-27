@@ -35,6 +35,27 @@ export const UpdateCategorySchema = z.object({
 });
 export type UpdateCategory = z.infer<typeof UpdateCategorySchema>;
 
+/** Validates a MongoDB ObjectId string (24-char hex). */
+export const ObjectIdString = z
+  .string()
+  .regex(/^[a-f\d]{24}$/i, "Must be a valid MongoDB ObjectId");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fabric Category
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const CreateFabricCategorySchema = z.object({
+  name: z.string().min(1, "Fabric category name is required").max(100),
+  slug: z
+    .string()
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Slug must be lowercase kebab-case")
+    .optional(),
+});
+export type CreateFabricCategory = z.infer<typeof CreateFabricCategorySchema>;
+
+export const UpdateFabricCategorySchema = CreateFabricCategorySchema.partial();
+export type UpdateFabricCategory = z.infer<typeof UpdateFabricCategorySchema>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Fabric
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +102,7 @@ export const CreateFabricSchema = z.object({
     .optional(),
   name: z.string().min(1, "Fabric name is required").max(120),
   description: z.string().max(1000).optional(),
+  categoryId: ObjectIdString,
   properties: z
     .array(CreateFabricPropertySchema)
     .min(1, "At least one fabric property/variant is required"),
@@ -96,11 +118,6 @@ export type UpdateFabric = z.infer<typeof UpdateFabricSchema>;
 // ─────────────────────────────────────────────────────────────────────────────
 // Product
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Validates a MongoDB ObjectId string (24-char hex). */
-const ObjectIdString = z
-  .string()
-  .regex(/^[a-f\d]{24}$/i, "Must be a valid MongoDB ObjectId");
 
 export const GenderEnum = z.enum(["men", "women", "unisex", "kids"]);
 export type Gender = z.infer<typeof GenderEnum>;

@@ -1580,20 +1580,67 @@ export const SAMPLE_PRODUCTS: SeedProduct[] = [
 export async function seedProductCatalog() {
   try {
     const { connectMongoDB } = await import("./index");
-    const { Product, Fabric } = await import("./models");
+    const { Product, Fabric, FabricCategory } = await import("./models");
 
     await connectMongoDB();
     console.log("[Seed] Connected to MongoDB");
+
+    // ── Step 0: Fabric Categories ─────────────────────────────────────────
+    await FabricCategory.deleteMany({});
+    console.log("[Seed] Cleared existing fabric categories");
+
+    const categorySlugs = ["aso-oke", "cotton", "silk", "kente", "ankara", "senator", "brocade", "lace", "print"];
+    const categoryNames = ["Aso-oke", "Cotton", "Silk", "Kente", "Ankara", "Senator", "Brocade", "Lace", "Print"];
+    
+    const createdCategories = [];
+    for (let i = 0; i < categorySlugs.length; i++) {
+      const cat = await FabricCategory.create({
+        name: categoryNames[i],
+        slug: categorySlugs[i],
+      });
+      createdCategories.push(cat);
+      console.log(`[Seed]  ✓ Fabric Category: ${cat.name}`);
+    }
+    
+    const categoryMap = new Map(createdCategories.map((c) => [c.slug, c]));
 
     // ── Step 1: Fabrics ──────────────────────────────────────────────────
     await Fabric.deleteMany({});
     console.log("[Seed] Cleared existing fabrics");
 
-    const fabricDocs: Array<{ _id: unknown; slug: string }> = [];
+    const fabricToCategory: Record<string, string> = {
+      "standard-aso-oke": "aso-oke",
+      "premium-aso-oke": "aso-oke",
+      "gold-threaded-aso-oke": "aso-oke",
+      "cotton-blend": "cotton",
+      "silk-blend": "silk",
+      "classic-kente": "kente",
+      "standard-ankara": "ankara",
+      "premium-dutch-wax": "ankara",
+      "senator-fabric": "senator",
+      "isi-agu-brocade": "brocade",
+      "french-lace": "lace",
+      "swiss-lace": "lace",
+      "dashiki-print-fabric": "print",
+      "boubou-fabric": "print",
+    };
+
+    const fabricDocs: any[] = [];
     for (const fabric of SAMPLE_FABRICS) {
-      const doc = await Fabric.create(fabric);
+      const catSlug = fabricToCategory[fabric.slug] || "cotton";
+      const catDoc = categoryMap.get(catSlug);
+      if (!catDoc) throw new Error(`Category ${catSlug} not found in seeded categories`);
+
+      const doc = await Fabric.create({
+        ...fabric,
+        category: catDoc._id,
+      });
       fabricDocs.push(doc);
-      console.log(`[Seed]  ✓ Fabric: ${doc.name}  (${doc.properties.length} variants)`);
+
+      catDoc.fabrics.push(doc._id as any);
+      await catDoc.save();
+
+      console.log(`[Seed]  ✓ Fabric: ${doc.name} under ${catDoc.name} (${doc.properties.length} variants)`);
     }
     console.log(`[Seed] ${fabricDocs.length} fabrics inserted`);
 

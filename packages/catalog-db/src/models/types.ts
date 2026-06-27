@@ -51,11 +51,21 @@ export interface IFabricProperty {
   isActive: boolean;
 }
 
+/** A Fabric Category MongoDB document. */
+export interface IFabricCategory extends Document {
+  name: string;
+  slug: string;
+  fabrics: Types.ObjectId[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /** A Fabric MongoDB document. */
 export interface IFabric extends Document {
   slug: string;
   name: string;
   description?: string;
+  category: Types.ObjectId; // Reference to FabricCategory
   properties: IFabricProperty[];
   createdAt: Date;
   updatedAt: Date;

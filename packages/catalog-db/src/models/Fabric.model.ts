@@ -54,6 +54,12 @@ const fabricSchema = new Schema<IFabric>(
       type: String,
       trim: true,
     },
+    category: {
+      type: Schema.Types.ObjectId,
+      ref: "FabricCategory",
+      required: true,
+      index: true,
+    },
     properties: {
       type: [fabricPropertySchema],
       default: [],

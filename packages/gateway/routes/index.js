@@ -30,6 +30,7 @@ const SERVICE_MAP = {
   '/api/v1/products':   process.env.CATALOG_SERVICE_URL,
   '/api/v1/categories': process.env.CATALOG_SERVICE_URL,
   '/api/v1/fabrics':    process.env.CATALOG_SERVICE_URL,
+  '/api/v1/fabric-categories': process.env.CATALOG_SERVICE_URL,
   '/api/v1/admin':      process.env.CATALOG_SERVICE_URL,
 
   // Core API — auth, orders

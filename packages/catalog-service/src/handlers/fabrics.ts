@@ -27,8 +27,9 @@ export async function listFabricsHandler(req: Request, res: Response) {
   const includeDeleted = req.query.includeDeleted === "true";
   const page = req.query.page ? Math.max(1, parseInt(req.query.page as string, 10)) : undefined;
   const limit = req.query.limit ? Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10))) : undefined;
+  const category = req.query.category as string | undefined;
 
-  const result = await fabricService.listFabrics({ includeDeleted, page, limit });
+  const result = await fabricService.listFabrics({ includeDeleted, page, limit, category });
   res.json({
     msg: "fabrics list",
     data: result,
