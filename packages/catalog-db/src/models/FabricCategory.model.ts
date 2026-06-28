@@ -30,8 +30,8 @@ const fabricCategorySchema = new Schema<IFabricCategory>(
   }
 );
 
-fabricCategorySchema.pre("save", function (next) {
-  if (!this.slug) {
+fabricCategorySchema.pre("validate", function (next) {
+  if (!this.slug && this.name) {
     this.slug = this.name
       .toLowerCase()
       .trim()
