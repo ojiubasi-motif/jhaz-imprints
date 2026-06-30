@@ -277,6 +277,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
         : null,
       fabricImgUrl: prop?.imageUrl ?? null,
       styleImgUrl: resolvedStyleOpt?.imgUrl || defaultStyleOpt?.imgUrl || null,
+      imgUrl: resolvedStyleOpt?.imgUrl || prop?.imageUrl || defaultStyleOpt?.imgUrl || null,
       basePrice: mongoProduct.basePrice,
       styleModifier: stylePriceModifier,
       fabricPricePerUnit: fabricPriceModifier,
