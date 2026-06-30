@@ -5,6 +5,7 @@
 
 import { prisma, OrderStatus } from "@jhaz-imprints/db";
 import { Product, Fabric } from "@jhaz-imprints/catalog-db";
+import mongoose from "mongoose";
 import { OrderCreateSchema, type MeasurementCreate } from "@jhaz-imprints/shared";
 import { computeOrderTotal } from "./pricingEngine";
 import { initializePayment, verifyPayment } from "./paystackService";
@@ -117,53 +118,91 @@ export async function populateOrdersImages(ordersInput: any | any[]): Promise<an
   const isArray = Array.isArray(ordersInput);
   const orders = isArray ? ordersInput : [ordersInput];
 
-  // Collect all unique productIds and fabricIds
+  // Collect unique identifiers for batch querying
   const productIds = new Set<string>();
   const fabricIds = new Set<string>();
+  const productNames = new Set<string>();
+  const fabricNames = new Set<string>();
 
   for (const o of orders) {
     if (!o.items || !Array.isArray(o.items)) continue;
     for (const item of o.items) {
-      if (item.productId) productIds.add(item.productId);
+      if (item.productId && mongoose.Types.ObjectId.isValid(item.productId)) {
+        productIds.add(item.productId);
+      }
+      if (item.productName) {
+        productNames.add(item.productName);
+      }
       if (item.fabricId) {
         const [cleanFabricId] = item.fabricId.split("::");
-        fabricIds.add(cleanFabricId);
+        if (mongoose.Types.ObjectId.isValid(cleanFabricId)) {
+          fabricIds.add(cleanFabricId);
+        }
+      }
+      if (item.fabricOptionName) {
+        fabricNames.add(item.fabricOptionName);
       }
     }
   }
 
-  // Batch query Mongo
-  const [products, fabrics] = await Promise.all([
+  // Batch query Mongo by ID and Name as fallback
+  const [productsById, fabricsById, productsByName, fabricsByName] = await Promise.all([
     Product.find({ _id: { $in: Array.from(productIds) } }).lean(),
     Fabric.find({ _id: { $in: Array.from(fabricIds) } }).lean(),
+    Array.from(productNames).length > 0
+      ? Product.find({ name: { $in: Array.from(productNames) } }).lean()
+      : Promise.resolve([]),
+    Array.from(fabricNames).length > 0
+      ? Fabric.find({ name: { $in: Array.from(fabricNames) } }).lean()
+      : Promise.resolve([]),
   ]);
 
-  const productMap = new Map(products.map((p: any) => [p._id.toString(), p]));
-  const fabricMap = new Map(fabrics.map((f: any) => [f._id.toString(), f]));
+  // Index maps for fast retrieval
+  const productMap = new Map<string, any>(productsById.map((p: any) => [p._id.toString(), p]));
+  const fabricMap = new Map<string, any>(fabricsById.map((f: any) => [f._id.toString(), f]));
+  const productByNameMap = new Map<string, any>(productsByName.map((p: any) => [p.name.toLowerCase(), p]));
+  const fabricByNameMap = new Map<string, any>(fabricsByName.map((f: any) => [f.name.toLowerCase(), f]));
 
   for (const o of orders) {
     if (!o.items || !Array.isArray(o.items)) continue;
     for (const item of o.items) {
-      const mongoProduct = productMap.get(item.productId);
+      // Find product by ID first, fallback to Name matching
+      let mongoProduct = productMap.get(item.productId);
+      if (!mongoProduct && item.productName) {
+        mongoProduct = productByNameMap.get(item.productName.toLowerCase());
+      }
       
-      // Resolve fabric variant
-      let prop: any = null;
+      // Find fabric by ID first, fallback to Name matching
+      let fabricDoc = null;
+      let selectedColorName = null;
       if (item.fabricId) {
-        const [cleanFabricId, selectedColorName] = item.fabricId.split("::");
-        const fabricDoc = fabricMap.get(cleanFabricId);
-        if (fabricDoc && fabricDoc.properties) {
-          if (selectedColorName) {
-            prop = fabricDoc.properties.find(
-              (p: any) => p.colorName.toLowerCase() === selectedColorName.toLowerCase()
-            ) ?? null;
-          }
-          if (!prop && fabricDoc.properties.length > 0) {
-            prop = fabricDoc.properties[0];
-          }
+        const [cleanFabricId, color] = item.fabricId.split("::");
+        selectedColorName = color;
+        fabricDoc = fabricMap.get(cleanFabricId);
+      }
+      if (!fabricDoc && item.fabricOptionName) {
+        fabricDoc = fabricByNameMap.get(item.fabricOptionName.toLowerCase());
+      }
+
+      // Resolve fabric variant property
+      let prop: any = null;
+      if (fabricDoc && fabricDoc.properties) {
+        if (selectedColorName) {
+          prop = fabricDoc.properties.find(
+            (p: any) => p.colorName.toLowerCase() === selectedColorName.toLowerCase()
+          ) ?? null;
+        }
+        if (!prop && item.colorName) {
+          prop = fabricDoc.properties.find(
+            (p: any) => p.colorName.toLowerCase() === item.colorName.toLowerCase()
+          ) ?? null;
+        }
+        if (!prop && fabricDoc.properties.length > 0) {
+          prop = fabricDoc.properties[0];
         }
       }
 
-      // Resolve style option
+      // Resolve style option image
       let styleOpt: any = null;
       if (
         mongoProduct &&
