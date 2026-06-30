@@ -229,6 +229,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     const inputStyleSafe = (item.styleOptionName ?? "Standard").trim();
     let stylePriceModifier = 0;
     let resolvedStyleName = inputStyleSafe;
+    let resolvedStyleOpt: any = null;
 
     if (
       inputStyleSafe.toLowerCase() !== "standard" &&
@@ -246,6 +247,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
       // priceModifier comes strictly from DB; ?? 0 preserves explicit DB zero.
       stylePriceModifier = styleOpt.priceModifier ?? 0;
       resolvedStyleName = styleOpt.name;
+      resolvedStyleOpt = styleOpt;
     }
 
     // 3d. Compute this item's price and push to allOrders
@@ -256,6 +258,10 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     });
 
     totalOrderAmount += itemTotal;
+
+    const defaultStyleOpt = mongoProduct.styleOptions?.find(
+      (s: any) => s.name === mongoProduct.defaultStyle
+    ) || mongoProduct.styleOptions?.[0];
 
     allOrders.push({
       productId: item.productId,
@@ -269,6 +275,8 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
       colorName: resolvedFabricName.includes(" — ")
         ? resolvedFabricName.split(" — ")[1]
         : null,
+      fabricImgUrl: prop?.imageUrl ?? null,
+      styleImgUrl: resolvedStyleOpt?.imgUrl || defaultStyleOpt?.imgUrl || null,
       basePrice: mongoProduct.basePrice,
       styleModifier: stylePriceModifier,
       fabricPricePerUnit: fabricPriceModifier,
