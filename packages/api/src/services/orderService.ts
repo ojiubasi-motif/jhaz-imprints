@@ -110,6 +110,87 @@ export function parseNotesMetadata(order: any): any {
 }
 
 /**
+ * Helper to dynamically batch-query MongoDB and populate missing style & fabric image URLs for order items.
+ */
+export async function populateOrdersImages(ordersInput: any | any[]): Promise<any> {
+  if (!ordersInput) return ordersInput;
+  const isArray = Array.isArray(ordersInput);
+  const orders = isArray ? ordersInput : [ordersInput];
+
+  // Collect all unique productIds and fabricIds
+  const productIds = new Set<string>();
+  const fabricIds = new Set<string>();
+
+  for (const o of orders) {
+    if (!o.items || !Array.isArray(o.items)) continue;
+    for (const item of o.items) {
+      if (item.productId) productIds.add(item.productId);
+      if (item.fabricId) {
+        const [cleanFabricId] = item.fabricId.split("::");
+        fabricIds.add(cleanFabricId);
+      }
+    }
+  }
+
+  // Batch query Mongo
+  const [products, fabrics] = await Promise.all([
+    Product.find({ _id: { $in: Array.from(productIds) } }).lean(),
+    Fabric.find({ _id: { $in: Array.from(fabricIds) } }).lean(),
+  ]);
+
+  const productMap = new Map(products.map((p: any) => [p._id.toString(), p]));
+  const fabricMap = new Map(fabrics.map((f: any) => [f._id.toString(), f]));
+
+  for (const o of orders) {
+    if (!o.items || !Array.isArray(o.items)) continue;
+    for (const item of o.items) {
+      const mongoProduct = productMap.get(item.productId);
+      
+      // Resolve fabric variant
+      let prop: any = null;
+      if (item.fabricId) {
+        const [cleanFabricId, selectedColorName] = item.fabricId.split("::");
+        const fabricDoc = fabricMap.get(cleanFabricId);
+        if (fabricDoc && fabricDoc.properties) {
+          if (selectedColorName) {
+            prop = fabricDoc.properties.find(
+              (p: any) => p.colorName.toLowerCase() === selectedColorName.toLowerCase()
+            ) ?? null;
+          }
+          if (!prop && fabricDoc.properties.length > 0) {
+            prop = fabricDoc.properties[0];
+          }
+        }
+      }
+
+      // Resolve style option
+      let styleOpt: any = null;
+      if (
+        mongoProduct &&
+        item.styleOptionName &&
+        item.styleOptionName.toLowerCase() !== "standard" &&
+        item.styleOptionName.toLowerCase() !== "original"
+      ) {
+        styleOpt = mongoProduct.styleOptions?.find(
+          (s: any) => s.name.toLowerCase() === item.styleOptionName.toLowerCase()
+        );
+      }
+
+      const defaultStyleOpt = mongoProduct?.styleOptions?.find(
+        (s: any) => s.name === mongoProduct.defaultStyle
+      ) || mongoProduct?.styleOptions?.[0];
+
+      // Populate if missing
+      item.fabricImgUrl = item.fabricImgUrl || prop?.imageUrl || null;
+      item.styleImgUrl = item.styleImgUrl || styleOpt?.imgUrl || defaultStyleOpt?.imgUrl || null;
+      item.imgUrl = item.imgUrl || item.styleImgUrl || item.fabricImgUrl || null;
+    }
+  }
+
+  return isArray ? orders : orders[0];
+}
+
+/**
  * Create a new order.
  *
  * Optimised flow:
@@ -638,11 +719,15 @@ export async function getOrderById(
     throw new AppError("Forbidden: You are not assigned to this order", 403);
   }
 
+  let resOrder: any;
   if (order.status === "PENDING") {
-    return await revalidateOrderPricing(order);
+    resOrder = await revalidateOrderPricing(order);
+  } else {
+    resOrder = parseNotesMetadata(order);
   }
 
-  return parseNotesMetadata(order);
+  await populateOrdersImages(resOrder);
+  return resOrder;
 }
 
 /**
@@ -828,6 +913,7 @@ export async function getUserOrders(userId: string, skip = 0, take = 20) {
   const total = await prisma.order.count({ where: { userId } });
 
   const parsedOrders = orders.map((o) => parseNotesMetadata(o));
+  await populateOrdersImages(parsedOrders);
 
   return { orders: parsedOrders, total, skip, take };
 }
@@ -1072,6 +1158,7 @@ export async function getAllOrders(skip = 0, take = 20, userRole?: string, userI
   const total = await prisma.order.count({ where });
 
   const parsedOrders = orders.map((o) => parseNotesMetadata(o));
+  await populateOrdersImages(parsedOrders);
 
   return { orders: parsedOrders, total, skip, take };
 }
