@@ -67,7 +67,10 @@ services:
       network: host
     image: jhaz-imprints/catalog-service:latest
     container_name: catalog-service
-    restart: on-failure:5
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     # ⚠️ No host port mapping — catalog-service is internal only.
     # Access exclusively through the gateway on port 8080.
     # To debug locally: docker exec -it catalog-service sh
@@ -228,7 +231,10 @@ services:
       dockerfile: packages/api/Dockerfile
       network: host
     container_name: core-api
-    restart: on-failure:5
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     # No host port exposed — only accessible via the gateway on port 8080.
     environment:
       NODE_ENV: production

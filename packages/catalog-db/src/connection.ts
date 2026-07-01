@@ -8,6 +8,7 @@ const MAX_RETRIES = 5;
 const INITIAL_RETRY_DELAY = 1000; // 1 second
 
 let connection: Connection | null = null;
+let disconnectTimeout: NodeJS.Timeout | null = null;
 
 /**
  * Connect to MongoDB with exponential backoff retry logic.
@@ -43,6 +44,34 @@ export async function connectMongoDB(retryAttempt = 0): Promise<Connection> {
     if (connection.listenerCount("disconnected") === 0) {
       connection.on("disconnected", () => {
         console.warn("[MongoDB] Disconnected");
+        // Start a 30-second countdown to exit if connection doesn't recover
+        if (!disconnectTimeout) {
+          console.warn("[MongoDB] Lost connection. Initiating 30-second shutdown countdown...");
+          disconnectTimeout = setTimeout(() => {
+            console.error("[MongoDB] Connection could not recover in 30s. Exiting process so container orchestrator restarts...");
+            process.exit(1);
+          }, 30000);
+        }
+      });
+    }
+
+    if (connection.listenerCount("connected") === 0) {
+      connection.on("connected", () => {
+        if (disconnectTimeout) {
+          console.log("[MongoDB] Connection recovered successfully. Aborting shutdown countdown.");
+          clearTimeout(disconnectTimeout);
+          disconnectTimeout = null;
+        }
+      });
+    }
+
+    if (connection.listenerCount("reconnected") === 0) {
+      connection.on("reconnected", () => {
+        if (disconnectTimeout) {
+          console.log("[MongoDB] Connection recovered successfully. Aborting shutdown countdown.");
+          clearTimeout(disconnectTimeout);
+          disconnectTimeout = null;
+        }
       });
     }
 
@@ -82,6 +111,10 @@ export async function connectMongoDB(retryAttempt = 0): Promise<Connection> {
 export async function disconnectMongoDB(): Promise<void> {
   if (connection) {
     try {
+      if (disconnectTimeout) {
+        clearTimeout(disconnectTimeout);
+        disconnectTimeout = null;
+      }
       await mongoose.disconnect();
       connection = null;
       console.log("[MongoDB] Disconnected gracefully");
