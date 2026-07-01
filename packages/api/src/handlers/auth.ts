@@ -67,7 +67,7 @@ export const registerHandler = async (req: Request, res: Response) => {
 export const loginHandler = async (req: Request, res: Response) => {
   try {
     const validatedData = LoginSchema.parse(req.body);
-    const response = await AuthService.login(validatedData, req.ip);
+    const response = await AuthService.login(validatedData, req.ip, req.cookies?.admin_device_token);
 
     if ("requiresOtp" in response && response.requiresOtp) {
       return res.status(200).json({
@@ -84,6 +84,16 @@ export const loginHandler = async (req: Request, res: Response) => {
     const { user, access_token, refresh_token } = response as { user: any; access_token: string; refresh_token: string };
 
     res.cookie(COOKIE_NAME, refresh_token, refreshCookieOptions());
+
+    if (user.role === "ADMIN") {
+      const deviceToken = AuthService.generateDeviceToken(user.id);
+      res.cookie("admin_device_token", deviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      });
+    }
 
     const full_name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
     const { password: _, refreshToken: __, createdAt: ___, updatedAt: ____, ...sanitizedUser } = user;
@@ -123,6 +133,16 @@ export const verifyAdminOtpHandler = async (req: Request, res: Response) => {
     const { user, access_token, refresh_token } = await AuthService.verifyAdminOtp(tempToken, otp, req.ip || "");
 
     res.cookie(COOKIE_NAME, refresh_token, refreshCookieOptions());
+
+    if (user.role === "ADMIN") {
+      const deviceToken = AuthService.generateDeviceToken(user.id);
+      res.cookie("admin_device_token", deviceToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+      });
+    }
 
     const full_name = `${user.firstName || ""} ${user.lastName || ""}`.trim();
     const { password: _, refreshToken: __, createdAt: ___, updatedAt: ____, ...sanitizedUser } = user;

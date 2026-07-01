@@ -69,6 +69,9 @@ vi.mock("@jhaz-imprints/catalog-db", () => {
           ],
         }),
       }),
+      find: vi.fn().mockReturnValue({
+        lean: vi.fn().mockResolvedValue([]),
+      }),
     },
   };
 });

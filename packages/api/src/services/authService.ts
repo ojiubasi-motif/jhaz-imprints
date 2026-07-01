@@ -90,7 +90,7 @@ export class AuthService {
    *   ≥ 20 failures → permanent lockout (admin unlock required)
    * Counter resets to 0 on each successful login.
    */
-  static async login(data: LoginData, ip?: string) {
+  static async login(data: LoginData, ip?: string, trustedDeviceToken?: string) {
     const user = await prisma.user.findUnique({
       where: { email: data.email },
     });
@@ -159,8 +159,23 @@ export class AuthService {
       throw new Error("Invalid email or password");
     }
 
-    // ── Check Admin Risk-Based MFA (Email OTP on New IP) ─────────────────────
-    if (user.role === "ADMIN" && user.lastLoginIp !== ip) {
+    // ── Check Admin Risk-Based MFA (Email OTP on New IP / Device) ────────────
+    let bypassOtp = false;
+    if (trustedDeviceToken) {
+      try {
+        const secret = process.env.JWT_SECRET;
+        if (secret) {
+          const decoded: any = jwt.verify(trustedDeviceToken, secret);
+          if (decoded && decoded.userId === user.id && decoded.isDeviceToken) {
+            bypassOtp = true;
+          }
+        }
+      } catch (err) {
+        // Ignore invalid/expired device tokens
+      }
+    }
+
+    if (user.role === "ADMIN" && !bypassOtp && user.lastLoginIp !== ip) {
       // Trigger OTP
       const otp = crypto.randomInt(100000, 1000000).toString();
       const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
@@ -299,6 +314,12 @@ export class AuthService {
       access_token,
       refresh_token,
     };
+  }
+
+  static generateDeviceToken(userId: string): string {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error("JWT_SECRET not set");
+    return jwt.sign({ userId, isDeviceToken: true }, secret, { expiresIn: "30d" });
   }
 
 
