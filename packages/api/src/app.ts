@@ -105,16 +105,18 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   const type = err.type || (statusCode >= 500 ? "SERVER_ERROR" : "FAILED");
   const code = err.code || 602;
 
-  // SECURITY (OWASP — Authorization / Information Disclosure):
-  // For unhandled 500 internal errors, we must return a generic message rather than
-  // leaking internal details (SQL queries, stack traces, database schema info) from err.message.
-  const isInternal = statusCode >= 500 && !isAppError(err);
-  const msg = isInternal ? "Internal server error" : (err.message || "Internal server error");
+  // TEMPORARY DEBUG ONLY: Expose full error message and stack trace in production for diagnostics
+  const msg = err.message || "Internal server error";
+  const data = {
+    stack: err.stack,
+    details: err.errors || null,
+    statusCode: statusCode,
+  };
 
   // Quizio-style envelope
   res.status(statusCode).json({
     msg,
-    data: err.errors || null, // For validation errors
+    data,
     type: type,
     code: code
   });
