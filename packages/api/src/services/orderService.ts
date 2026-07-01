@@ -307,6 +307,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     let resolvedFabricId: string | null = null;
     let yardsPerUnit = 1.0;
     let fabricUnit = "yard";
+    let prop: any = null;
 
     if (item.fabricId) {
       const [cleanFabricId, selectedColorName] = item.fabricId.split("::");
@@ -320,7 +321,6 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
       }
 
       // Find property by colorName (case-insensitive), fallback to the first property if not found/specified.
-      let prop = null;
       if (selectedColorName && fabricDoc.properties) {
         prop = fabricDoc.properties.find(
           (p) => p.colorName.toLowerCase() === selectedColorName.toLowerCase()
