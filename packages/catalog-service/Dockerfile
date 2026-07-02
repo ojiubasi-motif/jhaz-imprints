@@ -63,24 +63,24 @@ COPY packages/catalog-db/package.json       ./packages/catalog-db/
 RUN pnpm install --frozen-lockfile --ignore-scripts --prod
 
 # Copy compiled service output
-COPY --from=builder /app/packages/catalog-service/dist \
+COPY --chown=appuser:appgroup --from=builder /app/packages/catalog-service/dist \
                     ./packages/catalog-service/dist
 
 # Copy categories.json data file alongside the compiled output.
 # categoryService.ts resolves it relative to the compiled server.js (i.e., dist/),
 # so it must live at packages/catalog-service/dist/categories.json at runtime.
-COPY --from=builder /app/packages/catalog-db/src/data/categories.json \
+COPY --chown=appuser:appgroup --from=builder /app/packages/catalog-db/src/data/categories.json \
                     ./packages/catalog-service/dist/categories.json
 
 
 # Copy built workspace packages into node_modules so the service can resolve them
-COPY --from=builder /app/packages/shared/dist \
+COPY --chown=appuser:appgroup --from=builder /app/packages/shared/dist \
                     ./node_modules/@jhaz-imprints/shared/dist
-COPY --from=builder /app/packages/shared/package.json \
+COPY --chown=appuser:appgroup --from=builder /app/packages/shared/package.json \
                     ./node_modules/@jhaz-imprints/shared/package.json
-COPY --from=builder /app/packages/catalog-db/dist \
+COPY --chown=appuser:appgroup --from=builder /app/packages/catalog-db/dist \
                     ./node_modules/@jhaz-imprints/catalog-db/dist
-COPY --from=builder /app/packages/catalog-db/package.json \
+COPY --chown=appuser:appgroup --from=builder /app/packages/catalog-db/package.json \
                     ./node_modules/@jhaz-imprints/catalog-db/package.json
 
 USER appuser
