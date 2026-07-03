@@ -55,7 +55,7 @@ export function getCategories(): CategoryEntry[] {
     throw new AppError("Failed to load categories", 500, "CATEGORIES_LOAD_ERROR");
   }
 }
-
+   
 /**
  * Return true if a category with the given slug already exists.
  */

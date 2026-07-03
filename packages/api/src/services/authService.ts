@@ -25,6 +25,18 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+function normalizeIp(ip: string): string {
+  if (!ip) return "";
+  let clean = ip.trim();
+  if (clean.startsWith("::ffff:")) {
+    clean = clean.substring(7);
+  }
+  if (clean === "::1") {
+    clean = "127.0.0.1";
+  }
+  return clean;
+}
+
 export class AuthService {
   /**
    * Registers a new user.
@@ -175,7 +187,10 @@ export class AuthService {
       }
     }
 
-    if (user.role === "ADMIN" && !bypassOtp && user.lastLoginIp !== ip) {
+    const normalizedLastIp = user.lastLoginIp ? normalizeIp(user.lastLoginIp) : "";
+    const normalizedCurrentIp = normalizeIp(ip);
+
+    if (user.role === "ADMIN" && !bypassOtp && normalizedLastIp !== normalizedCurrentIp) {
       // Trigger OTP
       const otp = crypto.randomInt(100000, 1000000).toString();
       const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
@@ -223,7 +238,7 @@ export class AuthService {
         failedLoginAttempts: 0,
         lockedUntil: null,
         lastLoginAt: new Date(),
-        lastLoginIp: ip || null,
+        lastLoginIp: normalizedCurrentIp || null,
       },
     });
 
@@ -288,6 +303,8 @@ export class AuthService {
     const prevLastLoginAt = user.lastLoginAt;
     const prevLastLoginIp = user.lastLoginIp;
 
+    const normalizedCurrentIp = normalizeIp(ip);
+
     await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -295,7 +312,7 @@ export class AuthService {
         failedLoginAttempts: 0,
         lockedUntil: null,
         lastLoginAt: new Date(),
-        lastLoginIp: ip || null,
+        lastLoginIp: normalizedCurrentIp || null,
         adminOtpHash: null,
         adminOtpExpires: null,
       },

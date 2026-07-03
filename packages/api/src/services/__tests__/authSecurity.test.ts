@@ -128,5 +128,28 @@ describe("Auth Security Features", () => {
       expect(dbUser?.adminOtpHash).toBeDefined();
       expect(dbUser?.adminOtpExpires).toBeDefined();
     });
+
+    it("should bypass OTP on Admin login if IP is equivalent when normalized (e.g. ::ffff:1.1.1.1 vs 1.1.1.1)", async () => {
+      // Create admin user manually
+      const bcrypt = await import("bcryptjs");
+      const hashedPassword = await bcrypt.hash("SuperSecretStrongPasswordAdmin123!", 10);
+      await prisma.user.create({
+        data: {
+          email: TEST_ADMIN_EMAIL,
+          password: hashedPassword,
+          role: "ADMIN",
+          lastLoginIp: "::ffff:1.1.1.1",
+        },
+      });
+
+      // Login from equivalent normalized IP
+      const loginRes = await AuthService.login({
+        email: TEST_ADMIN_EMAIL,
+        password: "SuperSecretStrongPasswordAdmin123!",
+      }, "1.1.1.1");
+
+      expect(loginRes).not.toHaveProperty("requiresOtp");
+      expect(loginRes.user.email).toBe(TEST_ADMIN_EMAIL);
+    });
   });
 });
