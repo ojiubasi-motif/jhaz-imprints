@@ -90,7 +90,7 @@ export const loginHandler = async (req: Request, res: Response) => {
       res.cookie("admin_device_token", deviceToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as "none" | "lax",
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
     }
@@ -139,7 +139,7 @@ export const verifyAdminOtpHandler = async (req: Request, res: Response) => {
       res.cookie("admin_device_token", deviceToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        sameSite: (process.env.NODE_ENV === "production" ? "none" : "lax") as "none" | "lax",
         maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
     }
