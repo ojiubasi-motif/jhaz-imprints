@@ -31,6 +31,15 @@ export interface ICategoryRef {
   slug: string;
 }
 
+/** A Product/Style Category MongoDB document. */
+export interface ICategory extends Document {
+  name: string;
+  slug: string;
+  desc?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Fabric
 // ─────────────────────────────────────────────────────────────────────────────

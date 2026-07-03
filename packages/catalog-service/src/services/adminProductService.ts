@@ -14,8 +14,9 @@ import { AppError } from "../errors/AppError";
 // Validation helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function validateCategoryRefs(categories: ICategoryRef[]): void {
-  const validSlugs = new Set(getCategories().map((c) => c.slug));
+async function validateCategoryRefs(categories: ICategoryRef[]): Promise<void> {
+  const allCats = await getCategories();
+  const validSlugs = new Set(allCats.map((c) => c.slug));
   const invalidSlugs = categories
     .map((c) => c.slug)
     .filter((slug) => !validSlugs.has(slug));
@@ -78,7 +79,7 @@ function validateStyleOptions(styleOptions?: any[], defaultStyle?: string): void
  */
 export async function createProduct(input: CreateProduct) {
   validateStyleOptions(input.styleOptions, input.defaultStyle);
-  validateCategoryRefs(input.categories as ICategoryRef[]);
+  await validateCategoryRefs(input.categories as ICategoryRef[]);
   validateFabricRefs(input.fabrics);
 
   try {
@@ -115,7 +116,7 @@ export async function updateProduct(id: string, input: UpdateProduct) {
     const mergedDefaultStyle = input.defaultStyle !== undefined ? input.defaultStyle : existing.defaultStyle;
     validateStyleOptions(mergedStyleOptions as any[], mergedDefaultStyle);
   }
-  if (input.categories) validateCategoryRefs(input.categories as ICategoryRef[]);
+  if (input.categories) await validateCategoryRefs(input.categories as ICategoryRef[]);
   if (input.fabrics) validateFabricRefs(input.fabrics);
 
   const product = await Product.findByIdAndUpdate(id, input, {

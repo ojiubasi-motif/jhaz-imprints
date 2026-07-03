@@ -4,7 +4,7 @@
  * Admin:  POST / PUT /:slug / DELETE /:slug on /api/v1/admin/categories
  */
 
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import type { AuthenticatedRequest } from "../middleware/authenticate";
 import * as categoryService from "../services/categoryService";
 
@@ -14,10 +14,10 @@ import * as categoryService from "../services/categoryService";
 
 /**
  * GET /api/v1/categories
- * Returns the full list of categories from categories.json.
+ * Returns the full list of categories from MongoDB.
  */
-export function getCategoriesHandler(_req: Request, res: Response) {
-  const categories = categoryService.getCategories();
+export async function getCategoriesHandler(_req: any, res: Response) {
+  const categories = await categoryService.getCategories();
   res.json({
     msg: "categories list",
     data: { categories },
@@ -32,12 +32,12 @@ export function getCategoriesHandler(_req: Request, res: Response) {
 
 /**
  * POST /api/v1/admin/categories
- * Add a new category entry to categories.json.
+ * Add a new category entry to MongoDB.
  *
  * Body: { name: string; slug: string; desc?: string }
  */
-export function createCategoryHandler(req: AuthenticatedRequest, res: Response) {
-  const entry = categoryService.addCategory(req.body);
+export async function createCategoryHandler(req: AuthenticatedRequest, res: Response) {
+  const entry = await categoryService.addCategory(req.body);
   res.status(201).json({
     msg: "category created",
     data: entry,
@@ -53,9 +53,9 @@ export function createCategoryHandler(req: AuthenticatedRequest, res: Response) 
  *
  * Body: { name?: string; desc?: string }
  */
-export function updateCategoryHandler(req: AuthenticatedRequest, res: Response) {
+export async function updateCategoryHandler(req: AuthenticatedRequest, res: Response) {
   const { slug } = req.params;
-  const updated = categoryService.updateCategory(slug, req.body);
+  const updated = await categoryService.updateCategory(slug, req.body);
   res.json({
     msg: "category updated",
     data: updated,
@@ -66,13 +66,13 @@ export function updateCategoryHandler(req: AuthenticatedRequest, res: Response) 
 
 /**
  * DELETE /api/v1/admin/categories/:slug
- * Remove a category from categories.json.
+ * Remove a category from MongoDB.
  *
  * Note: Removing a category does NOT retroactively strip it from existing
  * product documents. Products retain their embedded {name, slug} snapshots.
  */
-export function deleteCategoryHandler(req: AuthenticatedRequest, res: Response) {
+export async function deleteCategoryHandler(req: AuthenticatedRequest, res: Response) {
   const { slug } = req.params;
-  categoryService.deleteCategory(slug);
+  await categoryService.deleteCategory(slug);
   res.status(204).send();
 }

@@ -72,8 +72,9 @@ export async function listProducts(query: ListProductsQuery) {
   }
 
   if (category) {
-    // Validate the slug exists in categories.json
-    const validCategories = getCategories().map((c) => c.slug);
+    // Validate the slug exists in MongoDB
+    const allCats = await getCategories();
+    const validCategories = allCats.map((c) => c.slug);
     if (!validCategories.includes(category)) {
       throw new AppError(
         `Invalid category. Must be one of: ${validCategories.join(", ")}`,

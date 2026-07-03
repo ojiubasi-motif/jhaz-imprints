@@ -1,26 +1,11 @@
 /**
- * Category service — manages the categories.json file on disk.
- *
- * Categories are stored as a static JSON file (not a DB collection) because:
- *   - The set is small (≤ 50 entries)
- *   - They change rarely (admin-controlled)
- *   - Reading from disk + in-process cache is orders of magnitude faster than a DB round-trip
- *
- * Write operations use an atomic read-modify-write pattern:
- *   1. Read current file contents
- *   2. Apply the mutation
- *   3. Write back atomically via a temp file rename (handled by fs.writeFile on most OS)
- *
- * In a multi-replica deployment, category writes would need a distributed lock (Redis).
- * For single-instance deployments (current architecture), this is safe.
+ * Category service — manages categories in the MongoDB collection.
  */
 
-import { readFileSync, writeFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { Category } from "@jhaz-imprints/catalog-db";
 import { AppError } from "../errors/AppError";
 
-/** Shape of each entry in categories.json */
+/** Shape of each entry in categories */
 export interface CategoryEntry {
   name: string;
   slug: string;
@@ -28,49 +13,36 @@ export interface CategoryEntry {
 }
 
 /**
- * ESM-compatible __dirname shim.
- * `__dirname` is undefined in ES modules; import.meta.url gives us the current
- * file's URL which we convert to a filesystem path.
+ * Load and return all categories from database.
  */
-const __filename = fileURLToPath(import.meta.url);
-const __dir     = dirname(__filename);
-
-/**
- * Absolute path to categories.json.
- * In production (Docker) the JSON is copied alongside the compiled server.js
- * inside the dist/ directory. In development it resolves from the source tree.
- * We check the dist-sibling path first, then fall back to the src path.
- */
-const CATEGORIES_FILE = join(__dir, "categories.json");
-
-/**
- * Load and return all categories from disk.
- */
-export function getCategories(): CategoryEntry[] {
+export async function getCategories(): Promise<CategoryEntry[]> {
   try {
-    const raw = readFileSync(CATEGORIES_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as { categories: CategoryEntry[] };
-    return parsed.categories;
-  } catch {
+    const categories = await Category.find().sort({ name: 1 });
+    return categories.map((c) => ({
+      name: c.name,
+      slug: c.slug,
+      desc: c.desc,
+    }));
+  } catch (err) {
     throw new AppError("Failed to load categories", 500, "CATEGORIES_LOAD_ERROR");
   }
 }
-   
+
 /**
  * Return true if a category with the given slug already exists.
  */
-export function categoryExists(slug: string): boolean {
-  return getCategories().some((c) => c.slug === slug);
+export async function categoryExists(slug: string): Promise<boolean> {
+  const count = await Category.countDocuments({ slug });
+  return count > 0;
 }
 
 /**
- * Append a new category to the JSON file.
+ * Append a new category to the database.
  * Throws if the slug already exists.
  */
-export function addCategory(entry: CategoryEntry): CategoryEntry {
-  const categories = getCategories();
-
-  if (categories.some((c) => c.slug === entry.slug)) {
+export async function addCategory(entry: CategoryEntry): Promise<CategoryEntry> {
+  const exists = await categoryExists(entry.slug);
+  if (exists) {
     throw new AppError(
       `Category with slug "${entry.slug}" already exists`,
       409,
@@ -78,61 +50,75 @@ export function addCategory(entry: CategoryEntry): CategoryEntry {
     );
   }
 
-  const updated = [...categories, entry];
-  _persist(updated);
-  return entry;
+  try {
+    const doc = await Category.create({
+      name: entry.name,
+      slug: entry.slug,
+      desc: entry.desc,
+    });
+    return {
+      name: doc.name,
+      slug: doc.slug,
+      desc: doc.desc,
+    };
+  } catch (err: any) {
+    throw new AppError(
+      err.message || "Failed to create category",
+      500,
+      "CATEGORY_CREATE_ERROR"
+    );
+  }
 }
 
 /**
- * Update the name and/or desc of an existing category.
+ * Update the name and/or desc of an existing category in the database.
  * The slug is immutable (it is the identifier).
  */
-export function updateCategory(
+export async function updateCategory(
   slug: string,
   patch: { name?: string; desc?: string }
-): CategoryEntry {
-  const categories = getCategories();
-  const index = categories.findIndex((c) => c.slug === slug);
+): Promise<CategoryEntry> {
+  try {
+    const doc = await Category.findOneAndUpdate(
+      { slug },
+      { $set: patch },
+      { new: true }
+    );
 
-  if (index === -1) {
-    throw new AppError(`Category "${slug}" not found`, 404, "CATEGORY_NOT_FOUND");
+    if (!doc) {
+      throw new AppError(`Category "${slug}" not found`, 404, "CATEGORY_NOT_FOUND");
+    }
+
+    return {
+      name: doc.name,
+      slug: doc.slug,
+      desc: doc.desc,
+    };
+  } catch (err: any) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(
+      err.message || "Failed to update category",
+      500,
+      "CATEGORY_UPDATE_ERROR"
+    );
   }
-
-  const updated = categories.map((c, i) =>
-    i === index ? { ...c, ...patch } : c
-  );
-
-  _persist(updated);
-  return updated[index];
 }
 
 /**
- * Remove a category from the JSON file by slug.
+ * Remove a category from the database by slug.
  */
-export function deleteCategory(slug: string): void {
-  const categories = getCategories();
-  const exists = categories.some((c) => c.slug === slug);
-
-  if (!exists) {
-    throw new AppError(`Category "${slug}" not found`, 404, "CATEGORY_NOT_FOUND");
-  }
-
-  const updated = categories.filter((c) => c.slug !== slug);
-  _persist(updated);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Private helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function _persist(categories: CategoryEntry[]): void {
+export async function deleteCategory(slug: string): Promise<void> {
   try {
-    writeFileSync(
-      CATEGORIES_FILE,
-      JSON.stringify({ categories }, null, 2),
-      "utf-8"
+    const result = await Category.deleteOne({ slug });
+    if (result.deletedCount === 0) {
+      throw new AppError(`Category "${slug}" not found`, 404, "CATEGORY_NOT_FOUND");
+    }
+  } catch (err: any) {
+    if (err instanceof AppError) throw err;
+    throw new AppError(
+      err.message || "Failed to delete category",
+      500,
+      "CATEGORY_DELETE_ERROR"
     );
-  } catch {
-    throw new AppError("Failed to persist categories", 500, "CATEGORIES_WRITE_ERROR");
   }
 }

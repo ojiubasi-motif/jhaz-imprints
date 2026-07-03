@@ -1,11 +1,12 @@
 // Re-export models
-export { Product, Fabric, FabricCategory } from "./models";
+export { Product, Fabric, FabricCategory, Category } from "./models";
 export type {
   IProduct,
   IFabric,
   IFabricCategory,
   IFabricProperty,
   ICategoryRef,
+  ICategory,
   IStyleOption,
   ISeoMeta,
   FabricUnit,
